@@ -1,0 +1,44 @@
+# Unreal Engine generated files
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+
+# Plugin-generated files
+Plugins/*/Binaries/
+Plugins/*/Intermediate/
+
+# Visual Studio / IDE
+.vs/
+.idea/
+.vscode/
+*.sln
+*.slnx
+*.VC.db
+*.VC.opendb
+*.suo
+*.user
+*.userprefs
+*.opensdf
+*.sdf
+*.code-workspace
+
+# Compilation and debug artifacts
+*.pdb
+*.obj
+*.pch
+*.ipch
+*.log
+*.tmp
+
+# Operating system
+Thumbs.db
+ehthumbs.db
+.DS_Store
+
+# Local Codex and MCP configuration
+.codex/
+
+# Local user configuration
+Config/WindowsEditor/EditorPerProjectUserSettings.ini
+Config/DefaultEditorPerProjectUserSettings.ini

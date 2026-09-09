@@ -1,0 +1,12 @@
+{
+	"schema": "rtps.chunk.lattice.v1",
+	"chunkX": 0,
+	"chunkY": 0,
+	"chunkZ": 0,
+	"dimX": 1,
+	"dimY": 1,
+	"dimZ": 1,
+	"isoLevel": 0.5,
+	"cellSize": 100,
+	"lattice": [ 0.203125, 0.203125, 0.203125, 0.203125, 0.203125, 0.203125, 0.203125, 0.203125 ]
+}

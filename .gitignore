@@ -42,3 +42,10 @@ ehthumbs.db
 # Local user configuration
 Config/WindowsEditor/EditorPerProjectUserSettings.ini
 Config/DefaultEditorPerProjectUserSettings.ini
+
+# Local AI / agent tooling
+.codex/
+.claude/
+CLAUDE.md
+Run-Claude.bat
+docs/superpowers/

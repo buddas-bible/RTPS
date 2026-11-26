@@ -11,9 +11,6 @@
 #include "Misc/ScopeLock.h"
 #include "HAL/PlatformTime.h"
 
-// Buffer size for receiving data
-const int32 BufferSize = 8192;
-
 FMCPServerRunnable::FMCPServerRunnable(UUnrealMCPBridge* InBridge, TSharedPtr<FSocket> InListenerSocket)
     : Bridge(InBridge)
     , ListenerSocket(InListenerSocket)
@@ -318,4 +315,4 @@ void FMCPServerRunnable::ProcessMessage(TSharedPtr<FSocket> Client, const FStrin
     {
         UE_LOG(LogTemp, Error, TEXT("MCPServerRunnable: Failed to send response"));
     }
-} 
+}

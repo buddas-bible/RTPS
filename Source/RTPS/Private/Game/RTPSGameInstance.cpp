@@ -127,7 +127,7 @@ void URTPSGameInstance::FindGameSessions()
 	SessionSearch->MaxSearchResults = 100;
 
 	if( !bIsLanQuery )
-		SessionSearch->QuerySettings.Set( SEARCH_PRESENCE, true, EOnlineComparisonOp::Equals );
+		SessionSearch->QuerySettings.Set( SEARCH_LOBBIES, true, EOnlineComparisonOp::Equals );
 
 	UE_LOG( LogTemp, Log, TEXT( "[RTPSValidation] FindGameSessions invoked. IsLanQuery=%d" ), bIsLanQuery );
 

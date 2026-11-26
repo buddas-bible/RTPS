@@ -2,7 +2,7 @@
 	"FileVersion": 3,
 	"EngineAssociation": "5.8",
 	"Category": "",
-	"Description": "",
+	"Description": "RTPS Unreal Engine project",
 	"Modules": [
 		{
 			"Name": "RTPS",

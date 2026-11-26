@@ -1,4 +1,4 @@
-﻿#include "Game/RTPSGameInstance.h"
+#include "Game/RTPSGameInstance.h"
 
 #include "Engine/World.h"
 #include <Kismet/GameplayStatics.h>
@@ -25,6 +25,11 @@ FString URTPSGameInstance::GetQuestMapPath()
 	return TEXT("/Game/ThirdPerson/Maps/VoxelTestMap");
 }
 
+FString URTPSGameInstance::GetArenaMapPath()
+{
+	return TEXT("/Game/ThirdPerson/Maps/ArenaMap");
+}
+
 FString URTPSGameInstance::GetLobbyTravelPath()
 {
 	return GetLobbyMapPath() + TEXT("?listen?game=/Script/RTPS.RTPSLobbyGameMode");
@@ -38,6 +43,10 @@ FString URTPSGameInstance::GetQuestTravelPath()
 FString URTPSGameInstance::BuildQuestTravelPath(const FString& QuestMapPath)
 {
 	const FString ResolvedMapPath = QuestMapPath.IsEmpty() ? GetQuestMapPath() : QuestMapPath;
+	if (ResolvedMapPath == GetArenaMapPath())
+	{
+		return ResolvedMapPath + TEXT("?listen?game=/Script/RTPS.ArenaGameMode_Steal");
+	}
 	return ResolvedMapPath + TEXT("?listen?game=/Script/RTPS.RTPSGameMode");
 }
 
@@ -664,6 +673,12 @@ void URTPSGameInstance::InitializeDemoQuestDefinitions()
 	VillageOutpostSweep.RequiredBossKills = 0;
 	VillageOutpostSweep.RewardAmount = 75;
 	DemoQuestDefinitions.Add(VillageOutpostSweep);
+
+	FRTPSDemoQuestDefinition VoxelArena;
+	VoxelArena.QuestId = TEXT("voxel_arena");
+	VoxelArena.QuestName = TEXT("Voxel Arena 1v1");
+	VoxelArena.MapPath = GetArenaMapPath();
+	DemoQuestDefinitions.Add(VoxelArena);
 
 	if (PendingSelectedQuestId.IsNone() && DemoQuestDefinitions.Num() > 0)
 	{

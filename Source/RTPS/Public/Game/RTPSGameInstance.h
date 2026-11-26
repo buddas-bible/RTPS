@@ -62,6 +62,7 @@ public:
 	static FString GetMainMenuMapPath();
 	static FString GetLobbyMapPath();
 	static FString GetQuestMapPath();
+	static FString GetArenaMapPath();
 	static FString GetLobbyTravelPath();
 	static FString GetQuestTravelPath();
 	static FString BuildQuestTravelPath(const FString& QuestMapPath);

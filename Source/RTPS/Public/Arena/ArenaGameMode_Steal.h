@@ -17,7 +17,7 @@ public:
 	AArenaGameMode_Steal();
 
 	virtual void BeginPlay() override;
-	virtual void PostLogin(APlayerController* NewPlayer) override;
+	virtual void FinishRestartPlayer(AController* NewPlayer, const FRotator& StartRotation) override;
 	virtual AActor* ChoosePlayerStart_Implementation(AController* Player) override;
 
 protected:

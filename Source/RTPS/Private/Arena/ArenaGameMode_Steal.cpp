@@ -44,11 +44,15 @@ void AArenaGameMode_Steal::BeginPlay()
 	}
 }
 
-void AArenaGameMode_Steal::PostLogin(APlayerController* NewPlayer)
+void AArenaGameMode_Steal::FinishRestartPlayer(AController* NewPlayer, const FRotator& StartRotation)
 {
-	AssignTeamForPlayer(NewPlayer);
+	Super::FinishRestartPlayer(NewPlayer, StartRotation);
 
-	Super::PostLogin(NewPlayer);
+	if (const APawn* Pawn = NewPlayer->GetPawn())
+	{
+		UE_LOG(LogTemp, Log, TEXT("[RTPSValidation] Arena pawn spawned. Player=%s TeamId=%d Location=%s"),
+			*NewPlayer->GetName(), GetTeamIdForController(NewPlayer), *Pawn->GetActorLocation().ToString());
+	}
 }
 
 AActor* AArenaGameMode_Steal::ChoosePlayerStart_Implementation(AController* Player)
@@ -183,6 +187,28 @@ APlayerStart* AArenaGameMode_Steal::FindTaggedPlayerStartForTeam(int32 TeamId)
 
 	if (MatchingStarts.Num() == 0)
 	{
+		// The prototype map has a single untagged start. Use it as the center of the duel spawn pair.
+		for (TActorIterator<APlayerStart> It(World); It; ++It)
+		{
+			const APlayerStart* Anchor = *It;
+			if (!Anchor->PlayerStartTag.IsNone())
+			{
+				continue;
+			}
+
+			const FVector Direction = Anchor->GetActorRightVector();
+			const FVector Location = Anchor->GetActorLocation() + Direction * (TeamId == 0 ? -450.f : 450.f);
+			const FRotator Rotation = (Anchor->GetActorLocation() - Location).Rotation();
+			FActorSpawnParameters Parameters;
+			Parameters.ObjectFlags |= RF_Transient;
+			Parameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			APlayerStart* TeamStart = World->SpawnActor<APlayerStart>(Location, Rotation, Parameters);
+			if (TeamStart)
+			{
+				TeamStart->PlayerStartTag = DesiredTag;
+			}
+			return TeamStart;
+		}
 		return nullptr;
 	}
 

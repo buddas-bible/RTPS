@@ -205,6 +205,14 @@ bool ARTPSLobbyGameMode::TryStartQuest(APlayerController* RequestingPlayer, FStr
 		*SelectedQuest.QuestName,
 		*SelectedQuest.MapPath,
 		bTravelStarted);
+	if (!bTravelStarted)
+	{
+		if (ARTPSGameState* RTPSGameState = GetGameState<ARTPSGameState>())
+		{
+			RTPSGameState->SetMatchPhase(ERTPSMatchPhase::Lobby);
+		}
+	}
+
 	if (!bTravelStarted && OutFailureReason != nullptr)
 	{
 		*OutFailureReason = TEXT("The server failed to travel to the selected quest map.");
@@ -240,6 +248,19 @@ bool ARTPSLobbyGameMode::CanStartQuest(FString* OutFailureReason) const
 
 		++ConnectedPlayers;
 		ReadyPlayers += RTPSPlayerState->IsLobbyReady() ? 1 : 0;
+	}
+
+	const URTPSGameInstance* RTPSGameInstance = GetGameInstance<URTPSGameInstance>();
+	const FRTPSDemoQuestDefinition* Selection = RTPSGameInstance ? RTPSGameInstance->GetSelectedQuestDefinition() : nullptr;
+	if (Selection && Selection->MapPath == URTPSGameInstance::GetArenaMapPath())
+	{
+		const bool bCanStartArena = RTPSGameState->MatchPhase == ERTPSMatchPhase::Lobby
+			&& ConnectedPlayers == 2 && ReadyPlayers == 2;
+		if (!bCanStartArena && OutFailureReason)
+		{
+			*OutFailureReason = TEXT("Voxel Arena requires exactly two ready players in the lobby.");
+		}
+		return bCanStartArena;
 	}
 
 	if (ConnectedPlayers <= 0)

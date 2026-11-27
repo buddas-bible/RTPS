@@ -12,6 +12,7 @@
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "TimerManager.h"
+#include "VoxelAuthoring/VoxelChunk.h"
 #include "State/RTPSPlayerState.h"
 #include "UObject/SoftObjectPath.h"
 
@@ -67,6 +68,10 @@ void AArenaGameMode_Steal::FinishRestartPlayer(AController* NewPlayer, const FRo
 		if (TeamId >= 0 && TeamId < ArenaTeamCount && !RoundPlayers[TeamId].IsValid())
 		{
 			RoundPlayers[TeamId] = NewPlayer;
+			if (ACharacter* Character = Cast<ACharacter>(NewPlayer->GetPawn()))
+			{
+				Character->GetCharacterMovement()->DisableMovement();
+			}
 		}
 
 		UE_LOG(LogTemp, Log, TEXT("[RTPSValidation] Arena pawn spawned. Player=%s TeamId=%d Location=%s"),
@@ -89,6 +94,24 @@ void AArenaGameMode_Steal::Tick(float DeltaSeconds)
 	const double Now = GetWorld()->GetTimeSeconds();
 	if (State->MatchPhase == ERTPSMatchPhase::ArenaWaiting && FirstPawn && SecondPawn)
 	{
+		for (const APawn* Pawn : {FirstPawn, SecondPawn})
+		{
+			FHitResult Floor;
+			const FVector Location = Pawn->GetActorLocation();
+			const FCollisionQueryParams Query(SCENE_QUERY_STAT(ArenaSpawnFloor), true, Pawn);
+			GetWorld()->LineTraceSingleByChannel(Floor, Location, Location - FVector(0, 0, 250), ECC_WorldStatic, Query);
+			if (!Cast<AVoxelChunk>(Floor.GetActor()))
+			{
+				return;
+			}
+		}
+		for (APawn* Pawn : {FirstPawn, SecondPawn})
+		{
+			if (ACharacter* Character = Cast<ACharacter>(Pawn))
+			{
+				Character->GetCharacterMovement()->SetMovementMode(MOVE_Falling);
+			}
+		}
 		RoundStartedAt = Now;
 		State->SetMatchPhase(ERTPSMatchPhase::ArenaPlaying);
 		UE_LOG(LogTemp, Log, TEXT("[RTPSValidation] Arena round started."));

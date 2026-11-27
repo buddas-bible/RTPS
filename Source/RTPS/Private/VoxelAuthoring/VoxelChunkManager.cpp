@@ -12,12 +12,40 @@
 #include "Kismet/GameplayStatics.h"
 #include "ProceduralMeshComponent.h"
 #include "Engine/World.h"
+#include "Engine/StaticMeshActor.h"
 #include "DrawDebugHelpers.h"
 #include "TimerManager.h"
 #include "VoxelAuthoring/VoxelDebugVisualizer.h"
 
 namespace
 {
+	bool UsesArenaPlatforms(const UWorld* World)
+	{
+		return World && World->GetMapName().EndsWith(TEXT("ArenaMap"));
+	}
+
+	TArray<float> BuildArenaPlatformDensity(FIntVector Coord, FIntVector Dimensions, float CellSize)
+	{
+		TArray<float> Density;
+		Density.Reserve((Dimensions.X + 1) * (Dimensions.Y + 1) * (Dimensions.Z + 1));
+		const FIntVector Origin = Coord * Dimensions;
+		for (int32 Z = 0; Z <= Dimensions.Z; ++Z)
+		{
+			for (int32 Y = 0; Y <= Dimensions.Y; ++Y)
+			{
+				for (int32 X = 0; X <= Dimensions.X; ++X)
+				{
+					const float WorldZ = (Origin.Z + Z) * CellSize;
+					const float WorldY = FMath::Abs((Origin.Y + Y) * CellSize);
+					const float WorldX = FMath::Abs((Origin.X + X) * CellSize);
+					const bool bSolid = WorldX <= 350.f && WorldY >= 250.f && WorldY <= 650.f
+						&& WorldZ >= -150.f && WorldZ < 0.f;
+					Density.Add(bSolid ? 1.f : 0.f);
+				}
+			}
+		}
+		return Density;
+	}
 	FString FormatChunkCoordList(const TArray<FIntVector>& ChunkCoords)
 	{
 		if (ChunkCoords.IsEmpty())
@@ -147,14 +175,22 @@ void AVoxelChunkManager::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// shortcut: Keep arena snapshots within one RPC until chunk snapshot streaming is available.
-	constexpr int32 ArenaChunkCells = 16;
-	if (GetWorld()->GetMapName().EndsWith(TEXT("ArenaMap"))
-		&& ChunkDimensions.X > ArenaChunkCells
-		&& ChunkDimensions.X == ChunkDimensions.Y && ChunkDimensions.Y == ChunkDimensions.Z)
+	if (UsesArenaPlatforms(GetWorld()))
 	{
-		CellSize *= static_cast<float>(ChunkDimensions.X) / ArenaChunkCells;
-		ChunkDimensions = FIntVector(ArenaChunkCells);
+		// 17^3 density samples fit the existing snapshot RPC.
+		ChunkDimensions = FIntVector(16);
+		CellSize = 50.f;
+		StreamingMode = EVoxelStreamingMode::Free;
+		bUseFixedArenaBounds = true;
+		FixedArenaMinChunkCoord = FIntVector(-1, -1, -1);
+		FixedArenaMaxChunkCoord = FIntVector(0, 0, 0);
+		GenerationSource = EVoxelChunkSource::WorldData;
+
+		for (TActorIterator<AStaticMeshActor> It(GetWorld()); It; ++It)
+		{
+			It->SetActorEnableCollision(false);
+			It->SetActorHiddenInGame(true);
+		}
 	}
 
 	if (bUseFixedArenaBounds)
@@ -485,6 +521,10 @@ void AVoxelChunkManager::SpawnChunk(FIntVector ChunkCoord)
 	Chunk->IsoLevel = IsoLevel;
 	Chunk->NoiseParams = NoiseParams;
 	Chunk->Source = GenerationSource;
+	if (UsesArenaPlatforms(World))
+	{
+		Chunk->ExternalDensity = BuildArenaPlatformDensity(ChunkCoord, ChunkDimensions, CellSize);
+	}
 	Chunk->SaveDir = ChunkSaveDir;
 	Chunk->ChunkMaterial = ChunkMaterial;
 	Chunk->bDebugVoxelMeshRebuilds = bDebugVoxelMeshRebuilds;
@@ -504,7 +544,7 @@ void AVoxelChunkManager::DestroyChunk(FIntVector ChunkCoord)
 	AVoxelChunk* Chunk = ChunkPtr->Get();
 	if (IsValid(Chunk))
 	{
-		if (Chunk->bModified)
+		if (Chunk->bModified && !UsesArenaPlatforms(GetWorld()))
 		{
 			Chunk->SaveToDisk();
 		}
@@ -605,6 +645,10 @@ void AVoxelChunkManager::UnloadAllChunks()
 
 void AVoxelChunkManager::SaveAllModifiedChunks()
 {
+	if (UsesArenaPlatforms(GetWorld()))
+	{
+		return;
+	}
 	for (const TPair<FIntVector, TObjectPtr<AVoxelChunk>>& Pair : LoadedChunks)
 	{
 		AVoxelChunk* Chunk = Pair.Value;
@@ -2561,7 +2605,11 @@ TArray<FIntVector> AVoxelChunkManager::GetDensityAffectedChunkCoordsForEditOp(co
 			for (int32 X = MinChunkCoord.X; X <= MaxChunkCoord.X; ++X)
 			{
 				const FIntVector ChunkCoord(X, Y, Z);
-				if (DoesEditOpOverlapChunk(EditOp, ChunkCoord))
+				const bool bInsideArena = !UsesArenaPlatforms(GetWorld())
+					|| (X >= FixedArenaMinChunkCoord.X && X <= FixedArenaMaxChunkCoord.X
+						&& Y >= FixedArenaMinChunkCoord.Y && Y <= FixedArenaMaxChunkCoord.Y
+						&& Z >= FixedArenaMinChunkCoord.Z && Z <= FixedArenaMaxChunkCoord.Z);
+				if (bInsideArena && DoesEditOpOverlapChunk(EditOp, ChunkCoord))
 				{
 					DensityAffectedChunkCoords.Add(ChunkCoord);
 				}
@@ -3147,7 +3195,7 @@ bool AVoxelChunkManager::MaterializePendingChunkStateForSubscribe(const FIntVect
 		ChunkDimensions,
 		NoiseParams,
 		GenerationSource,
-		TArray<float>(),
+		UsesArenaPlatforms(GetWorld()) ? BuildArenaPlatformDensity(ChunkCoord, ChunkDimensions, CellSize) : TArray<float>(),
 		ChunkSaveDir,
 		BaseDensity))
 	{

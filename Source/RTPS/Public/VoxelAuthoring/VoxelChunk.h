@@ -105,6 +105,15 @@ public:
 	TArray<float> LatticeDensity;
 
 private:
+	void StartQueuedMeshBuild();
+	void CommitMeshData(RTPSVoxelImport::FMarchingCubesMeshData MeshData,
+		const TCHAR* RebuildReason, double RebuildStartSeconds, bool bAsyncRebuild);
+
+	uint64 MeshRequestGeneration = 0;
+	bool bMeshBuildInFlight = false;
+	bool bMeshBuildQueued = false;
+	FString QueuedMeshReason;
+
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<UProceduralMeshComponent> MeshComponent;
 

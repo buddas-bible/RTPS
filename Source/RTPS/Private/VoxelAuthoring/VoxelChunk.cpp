@@ -308,45 +308,10 @@ bool AVoxelChunk::ApplyAuthoritativeDensitySnapshot(const TArray<float>& InDensi
 	bModified = false;
 	State = EVoxelChunkState::Loading;
 
-	TWeakObjectPtr<AVoxelChunk> WeakThis(this);
-	const FIntVector ChunkCoordValue = ChunkCoord;
-	const FIntVector ChunkDimensionsValue = ChunkDimensions;
-	const float CellSizeValue = CellSize;
-	const float IsoLevelValue = IsoLevel;
-	TArray<float> LatticeCopy = LatticeDensity;
-
-	UE_LOG(
-		LogTemp,
-		Log,
-		TEXT("[RTPSValidation] Authoritative voxel density snapshot accepted. Chunk=%s ChunkCoord=(%d,%d,%d) Revision=%d DensityCount=%d Reason=%s"),
-		*GetNameSafe(this),
-		ChunkCoord.X,
-		ChunkCoord.Y,
-		ChunkCoord.Z,
-		Revision,
-		LatticeCopy.Num(),
-		Reason != nullptr ? Reason : TEXT("Unknown"));
-
-	Async(EAsyncExecution::ThreadPool, [WeakThis, ChunkCoordValue, ChunkDimensionsValue, CellSizeValue, IsoLevelValue, LatticeCopy = MoveTemp(LatticeCopy)]() mutable
-	{
-		RTPSVoxelImport::FMarchingCubesMeshData MeshData;
-		const FIntVector WorldOrigin = ChunkCoordValue * ChunkDimensionsValue;
-		RTPSVoxelImport::BuildMarchingCubesChunkMeshDensity(
-			ChunkDimensionsValue,
-			WorldOrigin,
-			CellSizeValue,
-			IsoLevelValue,
-			TArrayView<const float>(LatticeCopy),
-			MeshData);
-
-		AsyncTask(ENamedThreads::GameThread, [WeakThis, MeshData = MoveTemp(MeshData), LatticeCopy = MoveTemp(LatticeCopy)]() mutable
-		{
-			if (WeakThis.IsValid())
-			{
-				WeakThis->ApplyMeshData(MoveTemp(MeshData), MoveTemp(LatticeCopy), true);
-			}
-		});
-	});
+	UE_LOG(LogTemp, Log,
+		TEXT("[RTPSValidation] Authoritative voxel density snapshot accepted. Chunk=%s Revision=%d DensityCount=%d Reason=%s"),
+		*GetNameSafe(this), Revision, InDensity.Num(), Reason ? Reason : TEXT("Unknown"));
+	RebuildMeshAsync(Reason);
 
 	return true;
 }
@@ -354,6 +319,7 @@ bool AVoxelChunk::ApplyAuthoritativeDensitySnapshot(const TArray<float>& InDensi
 void AVoxelChunk::BeginAsyncLoad()
 {
 	State = EVoxelChunkState::Loading;
+	const uint64 LoadGeneration = ++MeshRequestGeneration;
 
 	TWeakObjectPtr<AVoxelChunk> WeakThis(this);
 	const FIntVector ChunkCoordValue = ChunkCoord;
@@ -365,7 +331,7 @@ void AVoxelChunk::BeginAsyncLoad()
 	TArray<float> ExternalDensityValue = ExternalDensity;
 	const FString SaveDirValue = SaveDir;
 
-	Async(EAsyncExecution::ThreadPool, [WeakThis, ChunkCoordValue, ChunkDimensionsValue, CellSizeValue, IsoLevelValue, NoiseParamsValue, SourceValue, ExternalDensityValue = MoveTemp(ExternalDensityValue), SaveDirValue]() mutable
+	Async(EAsyncExecution::ThreadPool, [WeakThis, LoadGeneration, ChunkCoordValue, ChunkDimensionsValue, CellSizeValue, IsoLevelValue, NoiseParamsValue, SourceValue, ExternalDensityValue = MoveTemp(ExternalDensityValue), SaveDirValue]() mutable
 	{
 		TArray<float> Lattice;
 		if (!AVoxelChunk::BuildInitialLatticeDensity(
@@ -377,9 +343,9 @@ void AVoxelChunk::BeginAsyncLoad()
 			SaveDirValue,
 			Lattice))
 		{
-			AsyncTask(ENamedThreads::GameThread, [WeakThis, ChunkCoordValue, ChunkDimensionsValue]()
+			AsyncTask(ENamedThreads::GameThread, [WeakThis, LoadGeneration, ChunkCoordValue, ChunkDimensionsValue]()
 			{
-				if (WeakThis.IsValid())
+				if (WeakThis.IsValid() && WeakThis->MeshRequestGeneration == LoadGeneration)
 				{
 					WeakThis->State = EVoxelChunkState::Uninitialized;
 					UE_LOG(
@@ -408,9 +374,9 @@ void AVoxelChunk::BeginAsyncLoad()
 			TArrayView<const float>(Lattice),
 			MeshData);
 
-		AsyncTask(ENamedThreads::GameThread, [WeakThis, MeshData = MoveTemp(MeshData), Lattice = MoveTemp(Lattice)]() mutable
+		AsyncTask(ENamedThreads::GameThread, [WeakThis, LoadGeneration, MeshData = MoveTemp(MeshData), Lattice = MoveTemp(Lattice)]() mutable
 		{
-			if (WeakThis.IsValid())
+			if (WeakThis.IsValid() && WeakThis->MeshRequestGeneration == LoadGeneration)
 			{
 				WeakThis->ApplyMeshData(MoveTemp(MeshData), MoveTemp(Lattice), true);
 			}
@@ -754,63 +720,93 @@ void AVoxelChunk::ApplyBrush(const FVoxelBrush& Brush)
 
 void AVoxelChunk::RebuildMeshAsync(const TCHAR* Reason)
 {
-	TWeakObjectPtr<AVoxelChunk> WeakThis(this);
-	const FIntVector ChunkCoordValue = ChunkCoord;
-	const FIntVector ChunkDimensionsValue = ChunkDimensions;
-	const float CellSizeValue = CellSize;
-	const float IsoLevelValue = IsoLevel;
-	const FString RebuildReason = Reason != nullptr ? Reason : TEXT("Unknown");
-	const double RebuildStartSeconds = FPlatformTime::Seconds();
-	const bool bDebugMeshRebuilds = bDebugVoxelMeshRebuilds;
-	TArray<float> LatticeCopy = LatticeDensity;
-
-	if (bDebugMeshRebuilds)
+	check(IsInGameThread());
+	++MeshRequestGeneration;
+	bMeshBuildQueued = true;
+	QueuedMeshReason = Reason ? Reason : TEXT("Unknown");
+	if (!bMeshBuildInFlight)
 	{
-		UE_LOG(
-			LogRTPSVoxelDebug,
-			Log,
-			TEXT("[VoxelMeshRebuildDebug] Start Chunk=%s ChunkCoord=(%d,%d,%d) Trigger=%s Async=1 CollisionEnabled=%d Modified=%d"),
-			*GetNameSafe(this),
-			ChunkCoordValue.X,
-			ChunkCoordValue.Y,
-			ChunkCoordValue.Z,
-			*RebuildReason,
-			MeshComponent != nullptr && MeshComponent->GetCollisionEnabled() != ECollisionEnabled::NoCollision ? 1 : 0,
-			bModified ? 1 : 0);
+		StartQueuedMeshBuild();
+	}
+}
+
+void AVoxelChunk::StartQueuedMeshBuild()
+{
+	bMeshBuildInFlight = true;
+	bMeshBuildQueued = false;
+
+	const uint64 Generation = MeshRequestGeneration;
+	const TWeakObjectPtr<AVoxelChunk> WeakThis(this);
+	const FIntVector Dimensions = ChunkDimensions;
+	const FIntVector WorldOrigin = ChunkCoord * Dimensions;
+	const float BuildCellSize = CellSize;
+	const float BuildIsoLevel = IsoLevel;
+	const FString Reason = MoveTemp(QueuedMeshReason);
+	const double StartSeconds = FPlatformTime::Seconds();
+	const bool bDebug = bDebugVoxelMeshRebuilds;
+
+	if (bDebug)
+	{
+		UE_LOG(LogRTPSVoxelDebug, Log, TEXT("[VoxelMeshRebuildDebug] Start Chunk=%s Generation=%llu Trigger=%s"),
+			*GetNameSafe(this), Generation, *Reason);
 	}
 
-	Async(EAsyncExecution::ThreadPool, [WeakThis, ChunkCoordValue, ChunkDimensionsValue, CellSizeValue, IsoLevelValue, RebuildReason, RebuildStartSeconds, bDebugMeshRebuilds, LatticeCopy = MoveTemp(LatticeCopy)]() mutable
-	{
-		RTPSVoxelImport::FMarchingCubesMeshData MeshData;
-		const FIntVector WorldOrigin = ChunkCoordValue * ChunkDimensionsValue;
-		RTPSVoxelImport::BuildMarchingCubesChunkMeshDensity(
-			ChunkDimensionsValue,
-			WorldOrigin,
-			CellSizeValue,
-			IsoLevelValue,
-			TArrayView<const float>(LatticeCopy),
-			MeshData);
-
-		AsyncTask(ENamedThreads::GameThread, [WeakThis, MeshData = MoveTemp(MeshData), LatticeCopy = MoveTemp(LatticeCopy), RebuildReason, RebuildStartSeconds, bDebugMeshRebuilds]() mutable
+	Async(EAsyncExecution::ThreadPool,
+		[WeakThis, Generation, Dimensions, WorldOrigin, BuildCellSize, BuildIsoLevel, Reason, StartSeconds, bDebug, Density = LatticeDensity]()
 		{
-			if (WeakThis.IsValid())
-			{
-				WeakThis->ApplyMeshData(
-					MoveTemp(MeshData),
-					MoveTemp(LatticeCopy),
-					false,
-					*RebuildReason,
-					RebuildStartSeconds,
-					bDebugMeshRebuilds);
-			}
+			RTPSVoxelImport::FMarchingCubesMeshData MeshData;
+			RTPSVoxelImport::BuildMarchingCubesChunkMeshDensity(
+				Dimensions, WorldOrigin, BuildCellSize, BuildIsoLevel, MakeArrayView(Density), MeshData);
+
+			AsyncTask(ENamedThreads::GameThread,
+				[WeakThis, Generation, MeshData = MoveTemp(MeshData), Reason, StartSeconds, bDebug]() mutable
+				{
+					AVoxelChunk* Chunk = WeakThis.Get();
+					if (!Chunk)
+					{
+						return;
+					}
+
+					Chunk->bMeshBuildInFlight = false;
+					if (Chunk->MeshRequestGeneration == Generation)
+					{
+						Chunk->CommitMeshData(MoveTemp(MeshData), *Reason, StartSeconds, bDebug);
+					}
+					else if (bDebug)
+					{
+						UE_LOG(LogRTPSVoxelDebug, Log, TEXT("[VoxelMeshRebuildDebug] Discarded superseded mesh. Chunk=%s Generation=%llu Latest=%llu"),
+							*GetNameSafe(Chunk), Generation, Chunk->MeshRequestGeneration);
+					}
+
+					if (Chunk->bMeshBuildQueued)
+					{
+						Chunk->StartQueuedMeshBuild();
+					}
+				});
 		});
-	});
 }
 
 void AVoxelChunk::ApplyMeshData(
 	RTPSVoxelImport::FMarchingCubesMeshData MeshData,
 	TArray<float> InLatticeDensity,
 	bool bMarkCleanAfterApply,
+	const TCHAR* RebuildReason,
+	double RebuildStartSeconds,
+	bool bAsyncRebuild)
+{
+	check(IsInGameThread());
+	++MeshRequestGeneration;
+	bMeshBuildQueued = false;
+	LatticeDensity = MoveTemp(InLatticeDensity);
+	if (bMarkCleanAfterApply)
+	{
+		bModified = false;
+	}
+	CommitMeshData(MoveTemp(MeshData), RebuildReason, RebuildStartSeconds, bAsyncRebuild);
+}
+
+void AVoxelChunk::CommitMeshData(
+	RTPSVoxelImport::FMarchingCubesMeshData MeshData,
 	const TCHAR* RebuildReason,
 	double RebuildStartSeconds,
 	bool bAsyncRebuild)
@@ -833,11 +829,6 @@ void AVoxelChunk::ApplyMeshData(
 			FilterStats.FinalTriangleCount);
 	}
 
-	LatticeDensity = MoveTemp(InLatticeDensity);
-	if (bMarkCleanAfterApply)
-	{
-		bModified = false;
-	}
 
 	if (!MeshComponent)
 	{

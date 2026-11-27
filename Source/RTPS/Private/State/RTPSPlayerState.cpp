@@ -34,6 +34,7 @@ bool ARTPSPlayerState::IsLobbyReady() const
 void ARTPSPlayerState::ResetLobbyState()
 {
 	bLobbyReady = false;
+	TeamId = INDEX_NONE;
 }
 
 void ARTPSPlayerState::MarkQuestResult(bool bWasSuccessful, int32 RewardAmount)

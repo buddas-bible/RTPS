@@ -5,6 +5,13 @@
 #include "EngineUtils.h"
 #include "GameFramework/GameMode.h"
 #include "GameFramework/PlayerStart.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/Character.h"
+#include "Game/RTPSGameInstance.h"
+#include "Game/RTPSGameState.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
+#include "TimerManager.h"
 #include "State/RTPSPlayerState.h"
 #include "UObject/SoftObjectPath.h"
 
@@ -24,12 +31,18 @@ AArenaGameMode_Steal::AArenaGameMode_Steal()
 	, NextTeamAssignmentIndex(0)
 	, bTemporaryArenaBuilt(false)
 {
+	PrimaryActorTick.bCanEverTick = true;
 }
 
 void AArenaGameMode_Steal::BeginPlay()
 {
 	// Keep the shared gameplay class setup from ARTPSGameMode, but bypass quest BeginPlay behavior for this arena scaffold.
 	AGameMode::BeginPlay();
+
+	if (ARTPSGameState* State = GetGameState<ARTPSGameState>())
+	{
+		State->SetMatchPhase(ERTPSMatchPhase::ArenaWaiting);
+	}
 
 	UE_LOG(
 		LogTemp,
@@ -50,9 +63,95 @@ void AArenaGameMode_Steal::FinishRestartPlayer(AController* NewPlayer, const FRo
 
 	if (const APawn* Pawn = NewPlayer->GetPawn())
 	{
+		const int32 TeamId = GetTeamIdForController(NewPlayer);
+		if (TeamId >= 0 && TeamId < ArenaTeamCount && !RoundPlayers[TeamId].IsValid())
+		{
+			RoundPlayers[TeamId] = NewPlayer;
+		}
+
 		UE_LOG(LogTemp, Log, TEXT("[RTPSValidation] Arena pawn spawned. Player=%s TeamId=%d Location=%s"),
-			*NewPlayer->GetName(), GetTeamIdForController(NewPlayer), *Pawn->GetActorLocation().ToString());
+			*NewPlayer->GetName(), TeamId, *Pawn->GetActorLocation().ToString());
 	}
+}
+
+void AArenaGameMode_Steal::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	ARTPSGameState* State = GetGameState<ARTPSGameState>();
+	if (!State || State->MatchPhase == ERTPSMatchPhase::ArenaFinished)
+	{
+		return;
+	}
+
+	APawn* FirstPawn = RoundPlayers[0].IsValid() ? RoundPlayers[0]->GetPawn() : nullptr;
+	APawn* SecondPawn = RoundPlayers[1].IsValid() ? RoundPlayers[1]->GetPawn() : nullptr;
+	const double Now = GetWorld()->GetTimeSeconds();
+	if (State->MatchPhase == ERTPSMatchPhase::ArenaWaiting && FirstPawn && SecondPawn)
+	{
+		RoundStartedAt = Now;
+		State->SetMatchPhase(ERTPSMatchPhase::ArenaPlaying);
+		UE_LOG(LogTemp, Log, TEXT("[RTPSValidation] Arena round started."));
+	}
+
+	if (State->MatchPhase != ERTPSMatchPhase::ArenaPlaying)
+	{
+		return;
+	}
+
+#if !UE_BUILD_SHIPPING
+	if (!bAutoFallTriggered && SecondPawn && Now - RoundStartedAt >= 3.0
+		&& FParse::Param(FCommandLine::Get(), TEXT("RTPSAutoArenaFall")))
+	{
+		// Start a real gravity-driven fall through the same boundary checked during play.
+		bAutoFallTriggered = true;
+		FVector FallLocation = SecondPawn->GetActorLocation();
+		FallLocation.Z = RingOutZ + 100.f;
+		SecondPawn->SetActorLocation(FallLocation, false, nullptr, ETeleportType::TeleportPhysics);
+		if (ACharacter* Character = Cast<ACharacter>(SecondPawn))
+		{
+			Character->GetCharacterMovement()->SetMovementMode(MOVE_Falling);
+		}
+	}
+#endif
+
+	const bool bFirstOut = !FirstPawn || FirstPawn->GetActorLocation().Z < RingOutZ;
+	const bool bSecondOut = !SecondPawn || SecondPawn->GetActorLocation().Z < RingOutZ;
+	if (bFirstOut || bSecondOut)
+	{
+		FinishArenaRound(bFirstOut == bSecondOut ? ARTPSGameState::ArenaDraw : (bFirstOut ? 1 : 0));
+	}
+	else if (Now - RoundStartedAt >= 90.0)
+	{
+		FinishArenaRound(ARTPSGameState::ArenaDraw);
+	}
+}
+
+void AArenaGameMode_Steal::FinishArenaRound(int32 WinnerTeamId)
+{
+	ARTPSGameState* State = GetGameState<ARTPSGameState>();
+	if (!State || State->MatchPhase != ERTPSMatchPhase::ArenaPlaying)
+	{
+		return;
+	}
+
+	State->SetMatchPhase(ERTPSMatchPhase::ArenaFinished);
+	State->SetArenaWinner(WinnerTeamId);
+	for (const TWeakObjectPtr<AController>& Player : RoundPlayers)
+	{
+		if (ACharacter* Character = Player.IsValid() ? Cast<ACharacter>(Player->GetPawn()) : nullptr)
+		{
+			Character->GetCharacterMovement()->DisableMovement();
+		}
+	}
+
+	GetWorldTimerManager().SetTimer(ReturnToLobbyTimer, this, &AArenaGameMode_Steal::ReturnToLobby, 5.f);
+}
+
+void AArenaGameMode_Steal::ReturnToLobby()
+{
+	const bool bTravelStarted = GetWorld()->ServerTravel(URTPSGameInstance::GetLobbyTravelPath());
+	UE_LOG(LogTemp, Log, TEXT("[RTPSValidation] Arena returning to lobby. TravelStarted=%d"), bTravelStarted);
 }
 
 AActor* AArenaGameMode_Steal::ChoosePlayerStart_Implementation(AController* Player)

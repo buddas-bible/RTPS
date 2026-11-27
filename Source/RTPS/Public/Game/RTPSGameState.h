@@ -13,6 +13,9 @@ enum class ERTPSMatchPhase : uint8
 	QuestSucceeded UMETA(DisplayName = "Quest Succeeded"),
 	QuestFailed UMETA(DisplayName = "Quest Failed"),
 	ReturningToLobby UMETA(DisplayName = "Returning To Lobby"),
+	ArenaWaiting,
+	ArenaPlaying,
+	ArenaFinished,
 };
 
 USTRUCT(BlueprintType)
@@ -70,6 +73,13 @@ public:
 	void SetQuestResult(bool bNewHasResult, bool bNewSucceeded, int32 NewRewardAmount, int32 NewReturnCountdownSeconds);
 	void ClearQuestResult();
 
+	static constexpr int32 ArenaNoResult = -2;
+	static constexpr int32 ArenaDraw = -1;
+	void SetArenaWinner(int32 TeamId);
+
+	UFUNCTION()
+	void OnRep_ArenaWinner();
+
 	UFUNCTION(BlueprintPure, Category = "Lobby")
 	TArray<FRTPSLobbyPlayerInfo> GetLobbyPlayerInfos() const;
 
@@ -115,4 +125,7 @@ public:
 
 	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Result")
 	int32 ReturnCountdownSeconds;
+
+	UPROPERTY(ReplicatedUsing = OnRep_ArenaWinner, BlueprintReadOnly, Category = "Arena")
+	int32 ArenaWinnerTeamId = ArenaNoResult;
 };

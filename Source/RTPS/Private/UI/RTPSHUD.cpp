@@ -3,6 +3,7 @@
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Engine/Canvas.h"
 #include "Engine/Font.h"
+#include "State/RTPSPlayerState.h"
 #include <Components/ScrollBox.h>
 #include "Controller/RTPSCommonPlayerController.h"
 #include "UI/Chatting/ChatMessage.h"
@@ -55,6 +56,21 @@ void ARTPSHUD::DrawHUD()
 {
 	Super::DrawHUD();
 	DrawControlHints();
+
+	const ARTPSGameState* State = GetWorld()->GetGameState<ARTPSGameState>();
+	if (!Canvas || !State || State->ArenaWinnerTeamId == ARTPSGameState::ArenaNoResult)
+	{
+		return;
+	}
+
+	const APlayerController* Player = GetOwningPlayerController();
+	const ARTPSPlayerState* PlayerState = Player ? Player->GetPlayerState<ARTPSPlayerState>() : nullptr;
+	const FString Result = State->ArenaWinnerTeamId == ARTPSGameState::ArenaDraw ? TEXT("Draw")
+		: (PlayerState && PlayerState->GetTeamId() == State->ArenaWinnerTeamId ? TEXT("Victory") : TEXT("Defeat"));
+	const float X = Canvas->ClipX * 0.42f;
+	const float Y = Canvas->ClipY * 0.30f;
+	DrawText(Result, FLinearColor::White, X, Y, GEngine->GetLargeFont(), 1.4f);
+	DrawText(TEXT("Returning to lobby..."), FLinearColor::White, X, Y + 45.f, GEngine->GetMediumFont());
 }
 
 ERTPSMatchPhase ARTPSHUD::GetCurrentMatchPhase() const

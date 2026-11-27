@@ -35,6 +35,22 @@ void ARTPSGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 	DOREPLIFETIME(ARTPSGameState, bQuestSucceeded);
 	DOREPLIFETIME(ARTPSGameState, QuestRewardAmount);
 	DOREPLIFETIME(ARTPSGameState, ReturnCountdownSeconds);
+	DOREPLIFETIME(ARTPSGameState, ArenaWinnerTeamId);
+}
+
+void ARTPSGameState::SetArenaWinner(int32 TeamId)
+{
+	if (HasAuthority())
+	{
+		ArenaWinnerTeamId = TeamId;
+		OnRep_ArenaWinner();
+		ForceNetUpdate();
+	}
+}
+
+void ARTPSGameState::OnRep_ArenaWinner()
+{
+	UE_LOG(LogTemp, Log, TEXT("[RTPSValidation] Arena result received. WinnerTeam=%d"), ArenaWinnerTeamId);
 }
 
 void ARTPSGameState::SetMatchPhase(ERTPSMatchPhase NewPhase)

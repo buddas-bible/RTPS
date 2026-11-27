@@ -17,6 +17,7 @@ public:
 	AArenaGameMode_Steal();
 
 	virtual void BeginPlay() override;
+	virtual void Tick(float DeltaSeconds) override;
 	virtual void FinishRestartPlayer(AController* NewPlayer, const FRotator& StartRotation) override;
 	virtual AActor* ChoosePlayerStart_Implementation(AController* Player) override;
 
@@ -40,6 +41,8 @@ protected:
 	FVector CentralPlatformExtent;
 
 private:
+	void FinishArenaRound(int32 WinnerTeamId);
+	void ReturnToLobby();
 	void EnsureTemporaryArenaBuilt();
 	UStaticMesh* LoadArenaCubeMesh() const;
 	AStaticMeshActor* SpawnArenaCube(UStaticMesh* CubeMesh, const FVector& Location, const FVector& Scale, const TCHAR* DebugName);
@@ -60,4 +63,15 @@ private:
 	int32 NextSpawnIndex;
 	int32 NextTeamAssignmentIndex;
 	bool bTemporaryArenaBuilt;
+
+	TWeakObjectPtr<AController> RoundPlayers[2];
+	double RoundStartedAt = 0.0;
+	FTimerHandle ReturnToLobbyTimer;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Arena|Rules")
+	float RingOutZ = -500.f;
+
+#if !UE_BUILD_SHIPPING
+	bool bAutoFallTriggered = false;
+#endif
 };

@@ -55,9 +55,9 @@ void ARTPSLobbyGameMode::BeginPlay()
 	MaybeRunAutoLobbyFlow();
 }
 
-void ARTPSLobbyGameMode::PostLogin(APlayerController* NewPlayer)
+void ARTPSLobbyGameMode::HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer)
 {
-	Super::PostLogin(NewPlayer);
+	Super::HandleStartingNewPlayer_Implementation(NewPlayer);
 
 	if (ARTPSPlayerState* RTPSPlayerState = NewPlayer ? NewPlayer->GetPlayerState<ARTPSPlayerState>() : nullptr)
 	{

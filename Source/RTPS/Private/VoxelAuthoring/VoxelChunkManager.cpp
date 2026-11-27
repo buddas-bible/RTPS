@@ -147,6 +147,16 @@ void AVoxelChunkManager::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// shortcut: Keep arena snapshots within one RPC until chunk snapshot streaming is available.
+	constexpr int32 ArenaChunkCells = 16;
+	if (GetWorld()->GetMapName().EndsWith(TEXT("ArenaMap"))
+		&& ChunkDimensions.X > ArenaChunkCells
+		&& ChunkDimensions.X == ChunkDimensions.Y && ChunkDimensions.Y == ChunkDimensions.Z)
+	{
+		CellSize *= static_cast<float>(ChunkDimensions.X) / ArenaChunkCells;
+		ChunkDimensions = FIntVector(ArenaChunkCells);
+	}
+
 	if (bUseFixedArenaBounds)
 	{
 		LoadFixedArenaBounds();

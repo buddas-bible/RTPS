@@ -1798,6 +1798,12 @@ bool ARTPSPlayerController::ValidateVoxelBrushRequest(
 
 void ARTPSPlayerController::ServerApplyVoxelBrush_Implementation(FVoxelBrush Brush)
 {
+	const ARTPSGameState* State = GetRTPSGameState();
+	if (State && (State->MatchPhase == ERTPSMatchPhase::ArenaWaiting || State->MatchPhase == ERTPSMatchPhase::ArenaFinished))
+	{
+		return;
+	}
+
 	FString RejectionReason;
 	FString ValidationSource;
 	FString ValidationSourceReason;
@@ -1891,6 +1897,12 @@ void ARTPSPlayerController::ServerApplyVoxelBrush_Implementation(FVoxelBrush Bru
 
 void ARTPSPlayerController::ServerFireVoxelShot_Implementation(EVoxelBrushMode Mode)
 {
+	const ARTPSGameState* State = GetRTPSGameState();
+	if (State && (State->MatchPhase == ERTPSMatchPhase::ArenaWaiting || State->MatchPhase == ERTPSMatchPhase::ArenaFinished))
+	{
+		return;
+	}
+
 	const int64 ShotId = NextVoxelShotDebugId++;
 	FVector TraceStart = FVector::ZeroVector;
 	FVector TraceEnd = FVector::ZeroVector;

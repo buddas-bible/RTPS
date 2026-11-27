@@ -276,6 +276,10 @@ void ARTPSCharacterPlayer::Look( const FInputActionValue& Value )
 
 void ARTPSCharacterPlayer::Respawn( const FInputActionValue& Value )
 {
+	if (GetWorld()->GetMapName().EndsWith(TEXT("ArenaMap")))
+	{
+		return;
+	}
 	SetActorLocation( RespawnLocation );
 	SetActorRotation( RespawnRotation );
 }

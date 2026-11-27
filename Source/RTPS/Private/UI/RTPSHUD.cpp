@@ -3,9 +3,17 @@
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Engine/Canvas.h"
 #include "Engine/Font.h"
+#if !UE_BUILD_SHIPPING
+#include "HAL/FileManager.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
+#include "Misc/Paths.h"
+#include "UnrealClient.h"
+#endif
 #include "State/RTPSPlayerState.h"
 #include <Components/ScrollBox.h>
 #include "Controller/RTPSCommonPlayerController.h"
+#include "Controller/RTPSPlayerController.h"
 #include "UI/Chatting/ChatMessage.h"
 #include "UI/Chatting/Chatting.h"
 
@@ -55,18 +63,54 @@ void ARTPSHUD::PostInitializeComponents()
 void ARTPSHUD::DrawHUD()
 {
 	Super::DrawHUD();
-	DrawControlHints();
-
 	const ARTPSGameState* State = GetWorld()->GetGameState<ARTPSGameState>();
-	if (!Canvas || !State || State->ArenaWinnerTeamId == ARTPSGameState::ArenaNoResult)
+	const bool bInArena = State && (State->MatchPhase == ERTPSMatchPhase::ArenaWaiting
+		|| State->MatchPhase == ERTPSMatchPhase::ArenaPlaying || State->MatchPhase == ERTPSMatchPhase::ArenaFinished);
+	if (!bInArena)
+	{
+		DrawControlHints();
+	}
+#if !UE_BUILD_SHIPPING
+	else if (Canvas)
+	{
+		static const FString CaptureDirectory = []
+		{
+			FString Directory;
+			FParse::Value(FCommandLine::Get(), TEXT("RTPSArenaCaptureDir="), Directory);
+			if (!Directory.IsEmpty())
+			{
+				Directory = FPaths::ConvertRelativePathToFull(Directory);
+				IFileManager::Get().MakeDirectory(*Directory, true);
+			}
+			return Directory;
+		}();
+		static double NextCaptureTime = 0.0;
+		static int32 FrameNumber = 0;
+		const double Now = FPlatformTime::Seconds();
+		if (!CaptureDirectory.IsEmpty() && Now >= NextCaptureTime && !FScreenshotRequest::IsScreenshotRequested())
+		{
+			const FString File = CaptureDirectory / FString::Printf(TEXT("frame_%06d.png"), ++FrameNumber);
+			FScreenshotRequest::RequestScreenshot(File, true, false);
+			NextCaptureTime = Now + 1.0 / 20.0;
+		}
+	}
+#endif
+	const ARTPSPlayerController* ArenaPlayer = Cast<ARTPSPlayerController>(GetOwningPlayerController());
+	const FString LocalResult = ArenaPlayer ? ArenaPlayer->GetArenaResultText() : FString();
+	const bool bHasReplicatedResult = State && State->ArenaWinnerTeamId != ARTPSGameState::ArenaNoResult;
+	if (!Canvas || (LocalResult.IsEmpty() && !bHasReplicatedResult))
 	{
 		return;
 	}
 
 	const APlayerController* Player = GetOwningPlayerController();
 	const ARTPSPlayerState* PlayerState = Player ? Player->GetPlayerState<ARTPSPlayerState>() : nullptr;
-	const FString Result = State->ArenaWinnerTeamId == ARTPSGameState::ArenaDraw ? TEXT("Draw")
-		: (PlayerState && PlayerState->GetTeamId() == State->ArenaWinnerTeamId ? TEXT("Victory") : TEXT("Defeat"));
+	FString Result = LocalResult;
+	if (Result.IsEmpty())
+	{
+		Result = State->ArenaWinnerTeamId == ARTPSGameState::ArenaDraw ? TEXT("Draw")
+			: (PlayerState && PlayerState->GetTeamId() == State->ArenaWinnerTeamId ? TEXT("Victory") : TEXT("Defeat"));
+	}
 	const float X = Canvas->ClipX * 0.42f;
 	const float Y = Canvas->ClipY * 0.30f;
 	DrawText(Result, FLinearColor::White, X, Y, GEngine->GetLargeFont(), 1.4f);

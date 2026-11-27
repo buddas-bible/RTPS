@@ -13,6 +13,7 @@
 #include "Misc/Parse.h"
 #include "TimerManager.h"
 #include "VoxelAuthoring/VoxelChunk.h"
+#include "Controller/RTPSPlayerController.h"
 #include "State/RTPSPlayerState.h"
 #include "UObject/SoftObjectPath.h"
 
@@ -114,6 +115,13 @@ void AArenaGameMode_Steal::Tick(float DeltaSeconds)
 		}
 		RoundStartedAt = Now;
 		State->SetMatchPhase(ERTPSMatchPhase::ArenaPlaying);
+#if !UE_BUILD_SHIPPING
+		if (FParse::Param(FCommandLine::Get(), TEXT("RTPSAutoArenaDemo")))
+		{
+			RoundPlayers[0]->GetPlayerState<APlayerState>()->SetPlayerName(TEXT("Host"));
+			RoundPlayers[1]->GetPlayerState<APlayerState>()->SetPlayerName(TEXT("Guest"));
+		}
+#endif
 		UE_LOG(LogTemp, Log, TEXT("[RTPSValidation] Arena round started."));
 	}
 
@@ -123,6 +131,11 @@ void AArenaGameMode_Steal::Tick(float DeltaSeconds)
 	}
 
 #if !UE_BUILD_SHIPPING
+	if (FirstPawn && SecondPawn && FParse::Param(FCommandLine::Get(), TEXT("RTPSAutoArenaDemo")))
+	{
+		RunArenaDemo(*FirstPawn, *SecondPawn, Now - RoundStartedAt);
+	}
+
 	if (!bAutoFallTriggered && SecondPawn && Now - RoundStartedAt >= 3.0
 		&& FParse::Param(FCommandLine::Get(), TEXT("RTPSAutoArenaFall")))
 	{
@@ -150,6 +163,86 @@ void AArenaGameMode_Steal::Tick(float DeltaSeconds)
 	}
 }
 
+#if !UE_BUILD_SHIPPING
+void AArenaGameMode_Steal::RunArenaDemo(APawn& HostPawn, APawn& GuestPawn, double RoundElapsed)
+{
+	if (DemoStep >= 5 || RoundElapsed < NextDemoActionAt)
+	{
+		return;
+	}
+
+	ACharacter* Character = Cast<ACharacter>(&HostPawn);
+	ARTPSPlayerController* Controller = Cast<ARTPSPlayerController>(HostPawn.GetController());
+	if (!Character || !Controller)
+	{
+		return;
+	}
+
+	const FVector Center(0, 0, -100);
+	const FVector OpponentPad(0, 450, -50);
+	const auto HasVoxelFloor = [&](const FVector& Position)
+	{
+		FHitResult Hit;
+		FCollisionQueryParams Query(SCENE_QUERY_STAT(ArenaDemoFloor), true);
+		Query.AddIgnoredActor(&HostPawn);
+		Query.AddIgnoredActor(&GuestPawn);
+		GetWorld()->LineTraceSingleByChannel(Hit, Position + FVector(0, 0, 300),
+			Position - FVector(0, 0, 300), ECC_WorldStatic, Query);
+		return Hit.GetActor() && Hit.GetActor()->IsA<AVoxelChunk>();
+	};
+	const auto ApplyDemoBrush = [Controller](EVoxelBrushMode Mode, const FVector& Position, float Radius)
+	{
+		FVoxelBrush Brush;
+		Brush.WorldPosition = Position;
+		Brush.Radius = Radius;
+		Brush.Strength = 1.f;
+		Brush.Mode = Mode;
+		Brush.Shape = EVoxelBrushShape::Box;
+		Controller->ServerApplyVoxelBrush(Brush);
+	};
+
+	switch (DemoStep)
+	{
+	case 0:
+		if (!HasVoxelFloor(Center) && HasVoxelFloor(OpponentPad))
+		{
+			UE_LOG(LogTemp, Log, TEXT("[RTPSDemo] Initial terrain verified. CenterPad=0 OpponentPad=1"));
+			ApplyDemoBrush(EVoxelBrushMode::Add, Center, 100.f);
+			++DemoStep;
+			NextDemoActionAt = RoundElapsed + 1.0;
+		}
+		break;
+	case 1:
+		if (HasVoxelFloor(Center))
+		{
+			Character->SetActorLocation(FVector(0, 0, 240), false, nullptr, ETeleportType::TeleportPhysics);
+			Character->GetCharacterMovement()->SetMovementMode(MOVE_Falling);
+			++DemoStep;
+		}
+		break;
+	case 2:
+		if (Character->GetCharacterMovement()->IsMovingOnGround() && FMath::Abs(Character->GetActorLocation().Y) < 20)
+		{
+			UE_LOG(LogTemp, Log, TEXT("[RTPSDemo] Host landed on added voxel platform. Z=%.2f"), Character->GetActorLocation().Z);
+			++DemoStep;
+			NextDemoActionAt = RoundElapsed + 1.0;
+		}
+		break;
+	case 3:
+		ApplyDemoBrush(EVoxelBrushMode::Remove, OpponentPad, 225.f);
+		++DemoStep;
+		break;
+	case 4:
+		if (!HasVoxelFloor(OpponentPad))
+		{
+			UE_LOG(LogTemp, Log, TEXT("[RTPSDemo] Opponent voxel platform removed. PawnZ=%.2f"), GuestPawn.GetActorLocation().Z);
+			++DemoStep;
+		}
+		break;
+	}
+}
+#endif
+
 void AArenaGameMode_Steal::FinishArenaRound(int32 WinnerTeamId)
 {
 	ARTPSGameState* State = GetGameState<ARTPSGameState>();
@@ -162,6 +255,10 @@ void AArenaGameMode_Steal::FinishArenaRound(int32 WinnerTeamId)
 	State->SetArenaWinner(WinnerTeamId);
 	for (const TWeakObjectPtr<AController>& Player : RoundPlayers)
 	{
+		if (ARTPSPlayerController* Controller = Cast<ARTPSPlayerController>(Player.Get()))
+		{
+			Controller->ClientReceiveArenaResult(WinnerTeamId, GetTeamIdForController(Controller));
+		}
 		if (ACharacter* Character = Player.IsValid() ? Cast<ACharacter>(Player->GetPawn()) : nullptr)
 		{
 			Character->GetCharacterMovement()->DisableMovement();

@@ -185,6 +185,7 @@ void AVoxelChunkManager::BeginPlay()
 		FixedArenaMinChunkCoord = FIntVector(-1, -1, -1);
 		FixedArenaMaxChunkCoord = FIntVector(0, 0, 0);
 		GenerationSource = EVoxelChunkSource::WorldData;
+		bDebugShowChunkWireframes = false;
 
 		for (TActorIterator<AStaticMeshActor> It(GetWorld()); It; ++It)
 		{

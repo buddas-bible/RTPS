@@ -166,6 +166,13 @@ void ARTPSPlayerController::Destroyed()
 	Super::Destroyed();
 }
 
+void ARTPSPlayerController::ClientReceiveArenaResult_Implementation(int32 WinnerTeamId, int32 LocalTeamId)
+{
+	ArenaResultText = WinnerTeamId == ARTPSGameState::ArenaDraw ? TEXT("Draw")
+		: (WinnerTeamId == LocalTeamId ? TEXT("Victory") : TEXT("Defeat"));
+	UE_LOG(LogTemp, Log, TEXT("[RTPSValidation] Arena result received. WinnerTeam=%d HUD=%s"), WinnerTeamId, *ArenaResultText);
+}
+
 void ARTPSPlayerController::PlayerTick(float DeltaTime)
 {
 	Super::PlayerTick(DeltaTime);

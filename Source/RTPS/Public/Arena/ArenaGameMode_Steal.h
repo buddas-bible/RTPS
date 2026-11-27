@@ -73,5 +73,8 @@ private:
 
 #if !UE_BUILD_SHIPPING
 	bool bAutoFallTriggered = false;
+	void RunArenaDemo(APawn& HostPawn, APawn& GuestPawn, double RoundElapsed);
+	int32 DemoStep = 0;
+	double NextDemoActionAt = 2.0;
 #endif
 };

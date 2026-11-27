@@ -87,6 +87,11 @@ public:
 	void ClientReceiveVoxelChunkState(const FRTPSVoxelChunkStatePayload& Payload);
 
 	UFUNCTION(Client, Reliable)
+	void ClientReceiveArenaResult(int32 WinnerTeamId, int32 LocalTeamId);
+
+	const FString& GetArenaResultText() const { return ArenaResultText; }
+
+	UFUNCTION(Client, Reliable)
 	void ClientReceiveVoxelChunkDelta(const FRTPSVoxelChunkDeltaPayload& Payload);
 
 	UFUNCTION(Client, Reliable)
@@ -102,6 +107,7 @@ public:
 	bool IsVoxelBrushFinite(const FVoxelBrush& Brush) const;
 
 private:
+	FString ArenaResultText;
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FRTPSVoxelShotBuildSurfacePolicyTest;
 #endif

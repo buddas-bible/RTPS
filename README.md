@@ -78,3 +78,13 @@ pwsh -NoProfile -File ./Tools/Test-RTPSRuntimeSteam.ps1 -Build $archive -VmName 
 스크립트가 같은 빌드로 호스트와 VM 클라이언트를 실행합니다. Steam에서 호스트의 로비 ID가 방 목록에 나타나는지 확인하고 해당 행을 선택해 참가합니다. 두 경기의 승패 및 양쪽 로비 복귀를 런타임 이벤트로 확인합니다.
 
 기본 출력 경로는 아카이브의 `Verification/<run_id>/`입니다. `result.jsonl`에서 마지막 `test_finished`의 `status`가 `PASS`면 종료 코드 0입니다. 실패하면 종료 코드 1과 함께 `stage`, `round`, `message`가 기록됩니다. 같은 폴더에서 양쪽 런타임 이벤트와 게임 로그를 확인할 수 있습니다.
+
+### 커밋부터 Win64 패키징과 Steam 재경기까지
+
+로컬 Git에서 확인할 수 있는 커밋 해시를 전달합니다. 앞 절의 Steam 및 VM 준비가 필요하며, `$ue`는 UE 5.8 설치 경로입니다.
+
+```powershell
+pwsh -NoProfile -File ./Tools/Test-RTPSCommitSteam.ps1 -Commit 3ec08e2 -EngineRoot $ue -VmName 'RTPS Steam Guest' -GuestUser rtpstest -GuestPasswordFile $guestPasswordFile
+```
+
+커밋을 별도 작업 트리에 체크아웃하고 에디터 모듈과 Win64 Development 게임을 빌드한 뒤, 쿠킹과 패키징을 거쳐 Steam 검증을 실행합니다. 기본 출력은 `Documents/RTPS Commit Verification/<run_id>/`이며, 작업 트리와 패키지, 빌드 로그가 이 폴더에 남습니다. 최상위 `result.jsonl`의 마지막 `test_finished`에 최종 `PASS` 또는 `FAIL`과 단계가 기록됩니다. `steam_report`에는 Steam 검증의 상세 JSONL 경로가 기록됩니다. 종료 코드는 성공 시 0, 실패 시 1입니다.

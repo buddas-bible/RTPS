@@ -66,3 +66,15 @@ Development 실행 파일을 `-RTPSRuntimeTestDir=<디렉터리>`로 실행하�
 ```
 
 각 명령을 보낸 뒤 같은 요청 ID의 `command_finished`를 기다립니다. `accepted`는 게임 코드에 요청을 전달했다는 뜻입니다. 실행 결과는 `host_created`, `search_completed`, `row_selected`, `join_completed`, `map_loaded`에서 확인합니다. `host_created.lobby_id`와 동일한 `session_row_added`가 나오면 행을 선택할 수 있습니다. 양쪽 로비에서 `ready`를 보내고 호스트에 `start`를 보내면 경기를 시작합니다. 아레나 자동 시연을 쓰려면 호스트에 `-RTPSAutoQuestId=voxel_arena -RTPSAutoArenaDemo`를 추가합니다.
+
+### Steam 호스트와 VM 통합 검증
+
+호스트와 실행 중인 VirtualBox Windows VM에서 서로 다른 Steam 계정으로 로그인합니다. VM에는 VirtualBox Guest Additions가 필요합니다. `$archive`는 `Windows/RTPS.exe`가 들어 있는 Development 패키지의 아카이브 경로이고, `$guestPasswordFile`은 Windows 게스트 계정의 암호가 들어 있는 로컬 파일 경로입니다.
+
+```powershell
+pwsh -NoProfile -File ./Tools/Test-RTPSRuntimeSteam.ps1 -Build $archive -VmName 'RTPS Steam Guest' -GuestUser rtpstest -GuestPasswordFile $guestPasswordFile
+```
+
+스크립트가 같은 빌드로 호스트와 VM 클라이언트를 실행합니다. Steam에서 호스트의 로비 ID가 방 목록에 나타나는지 확인하고 해당 행을 선택해 참가합니다. 두 경기의 승패 및 양쪽 로비 복귀를 런타임 이벤트로 확인합니다.
+
+기본 출력 경로는 아카이브의 `Verification/<run_id>/`입니다. `result.jsonl`에서 마지막 `test_finished`의 `status`가 `PASS`면 종료 코드 0입니다. 실패하면 종료 코드 1과 함께 `stage`, `round`, `message`가 기록됩니다. 같은 폴더에서 양쪽 런타임 이벤트와 게임 로그를 확인할 수 있습니다.

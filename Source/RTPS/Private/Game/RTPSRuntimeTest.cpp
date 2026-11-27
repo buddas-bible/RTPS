@@ -47,7 +47,7 @@ void RTPSRuntimeTest::Emit(const TCHAR* Event, std::initializer_list<TPair<FStri
 	{
 		Line += TEXT("\n");
 		if (!FFileHelper::SaveStringToFile(Line, *(Directory() / TEXT("events.jsonl")),
-			FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM, &IFileManager::Get(), FILEWRITE_Append))
+			FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM, &IFileManager::Get(), FILEWRITE_Append | FILEWRITE_AllowRead))
 		{
 			UE_LOG(LogTemp, Error, TEXT("RTPS runtime test: failed to append %s."), Event);
 		}

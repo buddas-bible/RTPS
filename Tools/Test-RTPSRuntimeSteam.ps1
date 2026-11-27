@@ -68,10 +68,16 @@ function Send-GuestFile([string]$Source, [string]$Destination) {
     Invoke-VBox (@('guestcontrol', $VmName, 'copyto') + $auth + @($Source, $Destination)) | Out-Null
 }
 
+function Copy-PeerTrace {
+    # VBoxManage copies the snapshot without holding a handle on the live trace.
+    Invoke-Guest "powershell.exe -NoProfile -ExecutionPolicy Bypass -File $guestDirectory\Launch-Peer.ps1 -Snapshot" | Out-Null
+    Copy-GuestFile "$guestDirectory\events-snapshot.jsonl" $peerTrace
+}
+
 function Read-Trace([string]$Side) {
     $path = Join-Path $hostDirectory 'events.jsonl'
     if ($Side -eq 'Peer') {
-        try { Copy-GuestFile "$guestDirectory\events.jsonl" $peerTrace } catch { return }
+        try { Copy-PeerTrace } catch { return }
         $path = $peerTrace
     }
     if (Test-Path -LiteralPath $path) {
@@ -132,7 +138,20 @@ try {
     $stage = 'launch'
     $launcher = Join-Path $spool 'Launch-Peer.ps1'
     $launcherBody = @'
+param([switch]$Snapshot)
+
 $ErrorActionPreference = 'Stop'
+if ($Snapshot) {
+    $source = [IO.File]::Open('@RUN@\events.jsonl', 'Open', 'Read', 'ReadWrite')
+    try {
+        $target = [IO.File]::Create('@RUN@\events-snapshot.jsonl')
+        try { $source.CopyTo($target) } finally { $target.Dispose() }
+    } finally {
+        $source.Dispose()
+    }
+    exit 0
+}
+
 $exe = '@BUILD@\RTPS\Binaries\Win64\RTPS.exe'
 $p = Start-Process -FilePath $exe -WorkingDirectory (Split-Path $exe) -PassThru -WindowStyle Hidden -ArgumentList @(
     '-nullrhi', '-nosound', '-unattended', '-NoSplash', '-NoCrashDialog', '-ExecCmds="t.MaxFPS 60"',
@@ -224,7 +243,7 @@ schtasks /Run /TN $task
     Write-Report 'test_finished' $failure
     if ($hostGame -and !$hostGame.HasExited) { Stop-Process -InputObject $hostGame -ErrorAction SilentlyContinue }
     if ($guestPrepared) {
-        try { Copy-GuestFile "$guestDirectory\events.jsonl" $peerTrace } catch {}
+        try { Copy-PeerTrace } catch {}
         try { Copy-GuestFile "$guestDirectory\Peer.log" "$runDirectory/Peer.log" } catch {}
     }
     if ($taskAdded) {

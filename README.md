@@ -84,7 +84,9 @@ pwsh -NoProfile -File ./Tools/Test-RTPSRuntimeSteam.ps1 -Build $archive -VmName 
 로컬 Git에서 확인할 수 있는 커밋 해시를 전달합니다. 앞 절의 Steam 및 VM 준비가 필요하며, `$ue`는 UE 5.8 설치 경로입니다.
 
 ```powershell
-pwsh -NoProfile -File ./Tools/Test-RTPSCommitSteam.ps1 -Commit 3ec08e2 -EngineRoot $ue -VmName 'RTPS Steam Guest' -GuestUser rtpstest -GuestPasswordFile $guestPasswordFile
+pwsh -NoProfile -File ./Tools/Test-RTPSCommitSteam.ps1 -Commit 0e05f89 -EngineRoot $ue -VmName 'RTPS Steam Guest' -GuestUser rtpstest -GuestPasswordFile $guestPasswordFile -Repeat 3
 ```
 
-커밋을 별도 작업 트리에 체크아웃하고 에디터 모듈과 Win64 Development 게임을 빌드한 뒤, 쿠킹과 패키징을 거쳐 Steam 검증을 실행합니다. 기본 출력은 `Documents/RTPS Commit Verification/<run_id>/`이며, 작업 트리와 패키지, 빌드 로그가 이 폴더에 남습니다. 최상위 `result.jsonl`의 마지막 `test_finished`에 최종 `PASS` 또는 `FAIL`과 단계가 기록됩니다. `steam_report`에는 Steam 검증의 상세 JSONL 경로가 기록됩니다. 종료 코드는 성공 시 0, 실패 시 1입니다.
+커밋을 별도 작업 트리에 체크아웃하고 에디터 모듈과 Win64 Development 게임을 빌드한 뒤 한 번만 쿠킹·패키징합니다. 같은 패키지로 Steam 검증을 `-Repeat` 횟수만큼 순차 실행합니다. 기본값은 1회입니다.
+
+기본 출력은 Windows 빌드 경로 길이를 줄이기 위해 `Documents/RTPS-V/<run_id>/`에 저장합니다. 사용자 프로필 경로가 길면 `-OutputDirectory`로 더 짧은 경로를 지정할 수 있습니다. 최상위 `result.jsonl`에는 `attempt_finished`마다 회차 번호, `PASS` 또는 `FAIL`, 단계, 상세 JSONL 경로가 남습니다. 한 회차가 실패해도 남은 회차를 실행합니다. 마지막 `test_finished`는 전부 통과했을 때 `PASS`와 종료 코드 0을 반환합니다. 실패가 있으면 `FAIL`과 종료 코드 1을 반환하고 첫 실패 회차와 단계를 기록합니다.

@@ -5,7 +5,8 @@ param(
     [Parameter(Mandatory)][ValidatePattern('^[A-Za-z0-9_.-]+$')][string]$GuestUser,
     [Parameter(Mandatory)][string]$GuestPasswordFile,
     [string]$EngineRoot = 'E:/Game/UE_5.8',
-    [string]$OutputDirectory = (Join-Path $env:USERPROFILE 'Documents/RTPS Commit Verification'),
+    [string]$OutputDirectory = (Join-Path $env:USERPROFILE 'Documents/RTPS-V'),
+    [ValidateRange(1, [int]::MaxValue)][int]$Repeat = 1,
     [string]$VBoxManage = "$env:ProgramFiles\Oracle\VirtualBox\VBoxManage.exe"
 )
 
@@ -23,20 +24,24 @@ $message = ''
 $sha = $null
 $steamReport = $null
 $round = 0
+$attempt = 0
+$firstFailure = $null
 
-function Write-Report([string]$Event) {
+function Write-Report([string]$Event, [string]$ResultStatus = '') {
     $record = [ordered]@{
         event = $Event
         utc = [DateTime]::UtcNow.ToString('o')
         run_id = $runId
         commit = $sha
         stage = $stage
+        attempt = $attempt
+        repeat = $Repeat
         round = $round
         message = $message
         directory = $runDirectory
         steam_report = $steamReport
     }
-    if ($Event -eq 'test_finished') { $record.status = $status }
+    if ($ResultStatus) { $record.status = $ResultStatus }
     $line = $record | ConvertTo-Json -Compress
     [IO.File]::AppendAllText($report, $line + [Environment]::NewLine)
     Write-Host $line
@@ -78,27 +83,52 @@ try {
     }
     Write-Report 'stage_passed'
 
-    $stage = 'steam'
     $steamScript = Join-Path $PSScriptRoot 'Test-RTPSRuntimeSteam.ps1'
-    & (Join-Path $PSHOME 'pwsh.exe') -NoProfile -File $steamScript -Build $archive -VmName $VmName `
-        -GuestUser $GuestUser -GuestPasswordFile $passwordFile -VBoxManage $VBoxManage -OutputDirectory $steamOutput
-    $steamExit = $LASTEXITCODE
-    $steamReport = Get-ChildItem -LiteralPath $steamOutput -Recurse -Filter 'result.jsonl' -File -ErrorAction SilentlyContinue |
-        Select-Object -First 1 -ExpandProperty FullName
-    if (!$steamReport) { throw "Steam runner produced no result.jsonl (exit $steamExit)." }
-    $result = Get-Content -LiteralPath $steamReport -Tail 1 | ConvertFrom-Json
-    if ($steamExit -ne 0 -or $result.event -ne 'test_finished' -or $result.status -ne 'PASS' -or $result.round -ne 2) {
-        if ($result.stage) { $stage = "steam/$($result.stage)" }
-        $round = $result.round
-        throw "Steam verification failed (exit $steamExit). $($result.message)"
+    for ($attempt = 1; $attempt -le $Repeat; $attempt++) {
+        $stage = 'steam'
+        $round = 0
+        $message = ''
+        $steamReport = $null
+        $attemptStatus = 'FAIL'
+        $attemptOutput = Join-Path $steamOutput ('{0:D3}' -f $attempt)
+        Write-Report 'attempt_started'
+        try {
+            & (Join-Path $PSHOME 'pwsh.exe') -NoProfile -File $steamScript -Build $archive -VmName $VmName `
+                -GuestUser $GuestUser -GuestPasswordFile $passwordFile -VBoxManage $VBoxManage -OutputDirectory $attemptOutput
+            $steamExit = $LASTEXITCODE
+            $steamReport = Get-ChildItem -LiteralPath $attemptOutput -Recurse -Filter 'result.jsonl' -File -ErrorAction SilentlyContinue |
+                Select-Object -First 1 -ExpandProperty FullName
+            if (!$steamReport) { throw "Steam runner produced no result.jsonl (exit $steamExit)." }
+            $result = Get-Content -LiteralPath $steamReport -Tail 1 | ConvertFrom-Json
+            $round = $result.round
+            if ($steamExit -ne 0 -or $result.event -ne 'test_finished' -or $result.status -ne 'PASS' -or $round -ne 2) {
+                if ($result.stage) { $stage = "steam/$($result.stage)" }
+                throw "Steam verification failed (exit $steamExit). $($result.message)"
+            }
+            $stage = 'complete'
+            $attemptStatus = 'PASS'
+        } catch {
+            $message = $_.Exception.Message
+            if (!$firstFailure) {
+                $firstFailure = @{ attempt = $attempt; stage = $stage; round = $round; message = $message; report = $steamReport }
+            }
+        }
+        Write-Report 'attempt_finished' $attemptStatus
     }
-    $stage = 'complete'
-    $round = $result.round
-    $status = 'PASS'
+    $attempt = $Repeat
+    if ($firstFailure) {
+        $attempt = $firstFailure.attempt
+        $stage = $firstFailure.stage
+        $round = $firstFailure.round
+        $message = $firstFailure.message
+        $steamReport = $firstFailure.report
+    } else {
+        $status = 'PASS'
+    }
 } catch {
     $message = $_.Exception.Message
 } finally {
-    Write-Report 'test_finished'
+    Write-Report 'test_finished' $status
 }
 
 if ($status -eq 'PASS') { exit 0 }

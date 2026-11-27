@@ -46,6 +46,8 @@ public:
 	void RebuildChatMessages(const TArray<FString>& Messages, const FString& Reason = TEXT("Unspecified"));
 
 private:
+	FString LastDrawnRuntimeResult;
+
 	void DrawControlHints();
 	class UChatting* FindReusableChatWidget(class ARTPSCommonPlayerController* OwningPlayer) const;
 	int32 RemoveStaleChatWidgets(class ARTPSCommonPlayerController* OwningPlayer);

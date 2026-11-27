@@ -19,6 +19,7 @@ public:
 
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
+	bool RunRuntimeTestCommand(const FString& Action, const FString& LobbyId);
 
 	UPROPERTY(meta = (BindWidget))
 	class UWidgetSwitcher* MenuSwitcher;

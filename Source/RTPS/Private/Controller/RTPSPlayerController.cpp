@@ -1,4 +1,5 @@
 ﻿#include "Controller/RTPSPlayerController.h"
+#include "Game/RTPSRuntimeTest.h"
 
 #include "Character/RTPSCharacterPlayer.h"
 #include "CollisionQueryParams.h"
@@ -170,6 +171,8 @@ void ARTPSPlayerController::ClientReceiveArenaResult_Implementation(int32 Winner
 {
 	ArenaResultText = WinnerTeamId == ARTPSGameState::ArenaDraw ? TEXT("Draw")
 		: (WinnerTeamId == LocalTeamId ? TEXT("Victory") : TEXT("Defeat"));
+	RTPSRuntimeTest::Emit(TEXT("result_received"), {{TEXT("winner_team"), FString::FromInt(WinnerTeamId)},
+		{TEXT("result"), ArenaResultText}});
 	UE_LOG(LogTemp, Log, TEXT("[RTPSValidation] Arena result received. WinnerTeam=%d HUD=%s"), WinnerTeamId, *ArenaResultText);
 }
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Containers/Ticker.h"
 #include "Engine/GameInstance.h"
 #include <Interfaces/OnlineSessionInterface.h>
 #include "RTPSGameInstance.generated.h"
@@ -37,6 +38,8 @@ struct FServerInfo
 public:
 	UPROPERTY(BlueprintReadOnly)
 	FString ServerName;
+
+	FString SessionId;
 
 	UPROPERTY(BlueprintReadOnly)
 	int32 CurrentPlayers = 0;
@@ -157,6 +160,9 @@ protected:
 #pragma endregion
 
 private:
+	bool PollRuntimeTestCommand(float DeltaTime);
+	FTSTicker::FDelegateHandle RuntimeTestTicker;
+
 	bool CanStartHostedSession(FString& OutReason, EOnlineSessionState::Type& OutSessionState) const;
 
 	bool bPendingJoinAfterDestroy = false;

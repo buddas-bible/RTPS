@@ -1,4 +1,5 @@
 #include "Arena/ArenaGameMode_Steal.h"
+#include "Game/RTPSRuntimeTest.h"
 
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMeshActor.h"
@@ -122,6 +123,7 @@ void AArenaGameMode_Steal::Tick(float DeltaSeconds)
 			RoundPlayers[1]->GetPlayerState<APlayerState>()->SetPlayerName(TEXT("Guest"));
 		}
 #endif
+		RTPSRuntimeTest::Emit(TEXT("round_started"));
 		UE_LOG(LogTemp, Log, TEXT("[RTPSValidation] Arena round started."));
 	}
 
@@ -271,6 +273,7 @@ void AArenaGameMode_Steal::FinishArenaRound(int32 WinnerTeamId)
 void AArenaGameMode_Steal::ReturnToLobby()
 {
 	const bool bTravelStarted = GetWorld()->ServerTravel(URTPSGameInstance::GetLobbyTravelPath());
+	RTPSRuntimeTest::Emit(TEXT("return_to_lobby"), {{TEXT("started"), bTravelStarted ? TEXT("true") : TEXT("false")}});
 	UE_LOG(LogTemp, Log, TEXT("[RTPSValidation] Arena returning to lobby. TravelStarted=%d"), bTravelStarted);
 }
 

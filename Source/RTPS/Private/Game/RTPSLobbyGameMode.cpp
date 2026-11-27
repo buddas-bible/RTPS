@@ -1,4 +1,5 @@
 #include "Game/RTPSLobbyGameMode.h"
+#include "Game/RTPSRuntimeTest.h"
 
 #include "Controller/RTPSCommonPlayerController.h"
 #include "Controller/RTPSLobbyPlayerController.h"
@@ -346,6 +347,8 @@ void ARTPSLobbyGameMode::RefreshLobbyState() const
 	}
 
 	RTPSGameState->SetLobbyPopulation(ConnectedPlayers, ReadyPlayers);
+	RTPSRuntimeTest::Emit(TEXT("lobby_state"), {{TEXT("connected"), FString::FromInt(ConnectedPlayers)},
+		{TEXT("ready"), FString::FromInt(ReadyPlayers)}, {TEXT("quest"), RTPSGameState->ActiveQuestId.ToString()}});
 	UE_LOG(
 		LogTemp,
 		Log,

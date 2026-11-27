@@ -3,6 +3,7 @@
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Engine/Canvas.h"
 #include "Engine/Font.h"
+#include "Game/RTPSRuntimeTest.h"
 #if !UE_BUILD_SHIPPING
 #include "HAL/FileManager.h"
 #include "Misc/CommandLine.h"
@@ -68,6 +69,7 @@ void ARTPSHUD::DrawHUD()
 		|| State->MatchPhase == ERTPSMatchPhase::ArenaPlaying || State->MatchPhase == ERTPSMatchPhase::ArenaFinished);
 	if (!bInArena)
 	{
+		LastDrawnRuntimeResult.Reset();
 		DrawControlHints();
 	}
 #if !UE_BUILD_SHIPPING
@@ -115,6 +117,11 @@ void ARTPSHUD::DrawHUD()
 	const float Y = Canvas->ClipY * 0.30f;
 	DrawText(Result, FLinearColor::White, X, Y, GEngine->GetLargeFont(), 1.4f);
 	DrawText(TEXT("Returning to lobby..."), FLinearColor::White, X, Y + 45.f, GEngine->GetMediumFont());
+	if (!RTPSRuntimeTest::Directory().IsEmpty() && LastDrawnRuntimeResult != Result)
+	{
+		LastDrawnRuntimeResult = Result;
+		RTPSRuntimeTest::Emit(TEXT("hud_result_drawn"), {{TEXT("result"), Result}});
+	}
 }
 
 ERTPSMatchPhase ARTPSHUD::GetCurrentMatchPhase() const

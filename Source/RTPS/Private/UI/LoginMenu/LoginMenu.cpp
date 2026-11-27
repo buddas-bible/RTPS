@@ -7,6 +7,7 @@
 #include "Components/ScrollBox.h"
 #include "Components/TextBlock.h"
 #include "Components/WidgetSwitcher.h"
+#include "Game/RTPSRuntimeTest.h"
 #include "SessionSlot.h"
 #include "UObject/ConstructorHelpers.h"
 #include <Kismet/KismetSystemLibrary.h>
@@ -17,6 +18,46 @@ ULoginMenu::ULoginMenu(const FObjectInitializer& ObjectInitializer)
 	// Keep the default row widget as a hard reference so it is included in cooked builds.
 	static ConstructorHelpers::FClassFinder<USessionSlot> DefaultSessionSlot(TEXT("/Game/WBP_SessionSlot"));
 	SessionSlotClass = DefaultSessionSlot.Class;
+}
+
+bool ULoginMenu::RunRuntimeTestCommand(const FString& Action, const FString& LobbyId)
+{
+	if (RTPSRuntimeTest::Directory().IsEmpty())
+	{
+		return false;
+	}
+
+	if (Action == TEXT("host"))
+	{
+		OnCreateSessionClicked();
+		return true;
+	}
+	if (Action == TEXT("search"))
+	{
+		OnJoinSessionClicked();
+		return true;
+	}
+
+	const TArray<FServerInfo> Servers = GetServerList();
+	const int32 Index = Servers.IndexOfByPredicate([&LobbyId](const FServerInfo& Server)
+	{
+		return !LobbyId.IsEmpty() && Server.SessionId == LobbyId;
+	});
+	if (Index == INDEX_NONE || !SessionListScrollBox || !Cast<USessionSlot>(SessionListScrollBox->GetChildAt(Index)))
+	{
+		return false;
+	}
+	if (Action == TEXT("select"))
+	{
+		SelectSessionByIndex(Index);
+		return true;
+	}
+	if (Action == TEXT("join") && SelectedSessionIndex == Index)
+	{
+		OnJoinClicked();
+		return true;
+	}
+	return false;
 }
 
 void ULoginMenu::NativeConstruct()
@@ -222,7 +263,13 @@ void ULoginMenu::RebuildSessionList()
 		const FServerInfo& ServerInfo = ServerList[SessionIndex];
 		if (USessionSlot* SessionSlot = CreateSessionSlotWidget(ServerInfo, SessionIndex, SelectedSessionIndex == SessionIndex))
 		{
-			SessionListScrollBox->AddChild(SessionSlot);
+			if (SessionListScrollBox->AddChild(SessionSlot))
+			{
+				RTPSRuntimeTest::Emit(TEXT("session_row_added"), {{TEXT("lobby_id"), ServerInfo.SessionId},
+					{TEXT("name"), ServerInfo.ServerName}, {TEXT("index"), FString::FromInt(SessionIndex)},
+					{TEXT("players"), FString::FromInt(ServerInfo.CurrentPlayers)},
+					{TEXT("capacity"), FString::FromInt(ServerInfo.MaxPlayers)}});
+			}
 		}
 	}
 }
@@ -259,6 +306,8 @@ void ULoginMenu::SelectSessionByIndex(int32 SessionIndex)
 	}
 
 	SelectedSessionIndex = SessionIndex;
+	RTPSRuntimeTest::Emit(TEXT("row_selected"), {{TEXT("lobby_id"), ServerList[SessionIndex].SessionId},
+		{TEXT("index"), FString::FromInt(SessionIndex)}});
 	UE_LOG(LogTemp, Log, TEXT("[RTPSValidation] Selected session row. Index=%d ServerName=%s"),
 		SessionIndex, *ServerList[SessionIndex].ServerName);
 	RebuildSessionList();

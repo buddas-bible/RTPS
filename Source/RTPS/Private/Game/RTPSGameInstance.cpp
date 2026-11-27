@@ -1,6 +1,14 @@
 #include "Game/RTPSGameInstance.h"
 
+#include "Blueprint/WidgetBlueprintLibrary.h"
+#include "Controller/RTPSLobbyPlayerController.h"
+#include "Dom/JsonObject.h"
 #include "Engine/World.h"
+#include "Game/RTPSRuntimeTest.h"
+#include "HAL/FileManager.h"
+#include "Misc/FileHelper.h"
+#include "Serialization/JsonSerializer.h"
+#include "UI/LoginMenu/LoginMenu.h"
 #include <Kismet/GameplayStatics.h>
 #include <Misc/CommandLine.h>
 #include <Misc/Parse.h>
@@ -436,11 +444,17 @@ void URTPSGameInstance::Init()
 	Super::Init();
 	InitializeDemoQuestDefinitions();
 	ParseAutomationOptions();
+	if (!RTPSRuntimeTest::Directory().IsEmpty())
+	{
+		RuntimeTestTicker = FTSTicker::GetCoreTicker().AddTicker(
+			FTickerDelegate::CreateUObject(this, &ThisClass::PollRuntimeTestCommand), 0.2f);
+	}
 	FCoreUObjectDelegates::PostLoadMapWithWorld.AddUObject(this, &ThisClass::HandlePostLoadMap);
 
 	if (IOnlineSubsystem* SubSystem = IOnlineSubsystem::Get())
 	{
 		UE_LOG(LogTemp, Log, TEXT("[RTPSValidation] Online subsystem in use: %s"), *SubSystem->GetSubsystemName().ToString());
+		RTPSRuntimeTest::Emit(TEXT("online_subsystem"), {{TEXT("name"), SubSystem->GetSubsystemName().ToString()}});
 		SessionInterface = SubSystem->GetSessionInterface();
 
 		if (SessionInterface.IsValid())
@@ -456,16 +470,75 @@ void URTPSGameInstance::Init()
 
 void URTPSGameInstance::Shutdown()
 {
+	FTSTicker::RemoveTicker(RuntimeTestTicker);
 	FCoreUObjectDelegates::PostLoadMapWithWorld.RemoveAll(this);
 
 	Super::Shutdown();
 }
 #pragma endregion
 
+bool URTPSGameInstance::PollRuntimeTestCommand(float DeltaTime)
+{
+	const FString Path = RTPSRuntimeTest::Directory() / TEXT("command.json");
+	FString Text;
+	if (!IFileManager::Get().FileExists(*Path) || !FFileHelper::LoadFileToString(Text, *Path)
+		|| !IFileManager::Get().Delete(*Path))
+	{
+		return true;
+	}
+
+	TSharedPtr<FJsonObject> Command;
+	FString Id, Action, LobbyId;
+	if (!FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Text), Command) || !Command.IsValid()
+		|| !Command->TryGetStringField(TEXT("id"), Id) || !Command->TryGetStringField(TEXT("action"), Action))
+	{
+		RTPSRuntimeTest::Emit(TEXT("command_finished"), {{TEXT("status"), TEXT("invalid")}});
+		return true;
+	}
+
+	Command->TryGetStringField(TEXT("lobby_id"), LobbyId);
+	bool bAccepted = false;
+	if (ARTPSLobbyPlayerController* Lobby = Cast<ARTPSLobbyPlayerController>(GetFirstLocalPlayerController()))
+	{
+		UWorld* World = Lobby->GetWorld();
+		if (World && World->GetMapName().Contains(GetLobbyMapName()) && Action == TEXT("ready"))
+		{
+			Lobby->ServerSetLobbyReady(true);
+			bAccepted = true;
+		}
+		else if (World && World->GetMapName().Contains(GetLobbyMapName()) && Lobby->HasAuthority() && Action == TEXT("start"))
+		{
+			Lobby->RequestStartQuest();
+			bAccepted = true;
+		}
+	}
+	else if (GetWorld() && GetWorld()->GetMapName().Contains(TEXT("MainMenuMap")))
+	{
+		TArray<UUserWidget*> Menus;
+		UWidgetBlueprintLibrary::GetAllWidgetsOfClass(this, Menus, ULoginMenu::StaticClass(), true);
+		for (UUserWidget* Widget : Menus)
+		{
+			if (ULoginMenu* Menu = Cast<ULoginMenu>(Widget))
+			{
+				bAccepted = Menu->RunRuntimeTestCommand(Action, LobbyId);
+				break;
+			}
+		}
+	}
+	RTPSRuntimeTest::Emit(TEXT("command_finished"), {{TEXT("id"), Id}, {TEXT("action"), Action},
+		{TEXT("status"), bAccepted ? TEXT("accepted") : TEXT("rejected")}});
+	return true;
+}
+
 #pragma region Session callbacks
 void URTPSGameInstance::OnCreateSessionComplete(FName ServerName, bool Succeeded)
 {
 	UE_LOG(LogTemp, Log, TEXT("[RTPSValidation] Create session result. SessionName=%s Succeeded=%d"), *ServerName.ToString(), Succeeded);
+
+	const FNamedOnlineSession* Session = Succeeded && SessionInterface.IsValid()
+		? SessionInterface->GetNamedSession(ServerName) : nullptr;
+	RTPSRuntimeTest::Emit(TEXT("host_created"), {{TEXT("success"), Succeeded ? TEXT("true") : TEXT("false")},
+		{TEXT("lobby_id"), Session ? Session->GetSessionIdStr() : FString()}});
 
 	if (!Succeeded)
 	{
@@ -490,11 +563,14 @@ void URTPSGameInstance::OnFindSessionComplete( bool Succeeded )
 
 	if (!Succeeded || !SessionSearch.IsValid())
 	{
+		RTPSRuntimeTest::Emit(TEXT("search_completed"), {{TEXT("success"), TEXT("false")}});
 		ServerListUpdatedDel.Broadcast();
 		return;
 	}
 
 	const TArray<FOnlineSessionSearchResult>& SearchResults = SessionSearch->SearchResults;
+	RTPSRuntimeTest::Emit(TEXT("search_completed"), {{TEXT("success"), TEXT("true")},
+		{TEXT("count"), FString::FromInt(SearchResults.Num())}});
 	UE_LOG(LogTemp, Log, TEXT("[RTPSValidation] Session search completed. Succeeded=%d Results=%d"), Succeeded, SearchResults.Num());
 
 	for ( const FOnlineSessionSearchResult& SearchResult : SearchResults )
@@ -530,6 +606,7 @@ void URTPSGameInstance::OnFindSessionComplete( bool Succeeded )
 			AdvertisedServerName = UserName;
 		}
 
+		ServerInfo.SessionId = Id;
 		ServerInfo.ServerName = AdvertisedServerName;
 		ServerInfo.CurrentPlayers = SearchResult.Session.SessionSettings.NumPublicConnections - SearchResult.Session.NumOpenPublicConnections;
 		ServerInfo.MaxPlayers = SearchResult.Session.SessionSettings.NumPublicConnections;
@@ -566,6 +643,7 @@ void URTPSGameInstance::OnJoinSessionComplete( FName SessionName, EOnJoinSession
 {
 	UE_LOG( LogTemp, Log, TEXT( "[RTPSValidation] Join session result. SessionName=%s Result=%d" ), *SessionName.ToString(), static_cast< int32 >( Result ) );
 
+	RTPSRuntimeTest::Emit(TEXT("join_completed"), {{TEXT("result"), FString::FromInt(static_cast<int32>(Result))}});
 	bAutoJoinAttemptInProgress = false;
 	bAutoJoinResolved = ( Result == EOnJoinSessionCompleteResult::Success );
 
@@ -594,6 +672,7 @@ void URTPSGameInstance::OnJoinSessionComplete( FName SessionName, EOnJoinSession
 
 	FString JoinAddress;
 	const bool bResolved = SessionInterface->GetResolvedConnectString( SessionName, JoinAddress );
+	RTPSRuntimeTest::Emit(TEXT("join_address"), {{TEXT("address"), JoinAddress}});
 
 	UE_LOG(
 		LogTemp,
@@ -747,6 +826,7 @@ void URTPSGameInstance::HandlePostLoadMap( UWorld* LoadedWorld )
 		return;
 	}
 
+	RTPSRuntimeTest::Emit(TEXT("map_loaded"), {{TEXT("map"), LoadedWorld->GetMapName()}});
 	UE_LOG(LogTemp, Log, TEXT("[RTPSValidation] Post-load map hook reached map '%s'."), *LoadedWorld->GetMapName());
 
 	if (LoadedWorld->GetMapName().Contains(TEXT("MainMenuMap")))

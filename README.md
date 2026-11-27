@@ -53,3 +53,16 @@ $project = (Resolve-Path .\RTPS.uproject).Path
 유효한 Unreal 패키지 서명이 없는 매니퀸 파일 다섯 개를 제거했습니다. 그중 네 에셋의 기존 참조는 Core Redirect로 프로젝트 안의 유효한 동명 에셋에 연결했습니다. 기존 참조가 발견되지 않은 물리 에셋에는 리디렉션을 추가하지 않았습니다.
 
 UE 5.8.4의 Win64 Development 빌드에서 이전 출력을 지우고 735개 패키지를 전체 쿠킹했습니다. 쿠커는 오류 0건과 경고 27건을 보고했고, 같은 BuildCookRun 실행에서 패키징과 아카이브가 종료 코드 0으로 완료됐습니다. 새 실행 파일 두 개로 경기와 로비 복귀를 각각 두 번 확인했습니다.
+
+## CLI 런타임 검증
+
+Development 실행 파일을 `-RTPSRuntimeTestDir=<디렉터리>`로 실행하면 해당 디렉터리에 `events.jsonl`을 기록하고 `command.json`을 읽습니다. 실행마다 새 디렉터리를 사용합니다. 호스트와 참가자는 서로 다른 디렉터리를 사용합니다.
+
+```powershell
+./Tools/Send-RTPSRuntimeCommand.ps1 -Directory $hostRun -Action host
+./Tools/Send-RTPSRuntimeCommand.ps1 -Directory $peerRun -Action search
+./Tools/Send-RTPSRuntimeCommand.ps1 -Directory $peerRun -Action select -LobbyId $lobbyId
+./Tools/Send-RTPSRuntimeCommand.ps1 -Directory $peerRun -Action join -LobbyId $lobbyId
+```
+
+각 명령을 보낸 뒤 같은 요청 ID의 `command_finished`를 기다립니다. `accepted`는 게임 코드에 요청을 전달했다는 뜻입니다. 실행 결과는 `host_created`, `search_completed`, `row_selected`, `join_completed`, `map_loaded`에서 확인합니다. `host_created.lobby_id`와 동일한 `session_row_added`가 나오면 행을 선택할 수 있습니다. 양쪽 로비에서 `ready`를 보내고 호스트에 `start`를 보내면 경기를 시작합니다. 아레나 자동 시연을 쓰려면 호스트에 `-RTPSAutoQuestId=voxel_arena -RTPSAutoArenaDemo`를 추가합니다.

@@ -15,6 +15,8 @@ class RTPS_API ULoginMenu : public UUserWidget
 	GENERATED_BODY()
 
 public:
+	ULoginMenu(const FObjectInitializer& ObjectInitializer);
+
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 
@@ -68,7 +70,6 @@ protected:
 	void HandleServerListUpdated();
 
 	void RebuildSessionList();
-	void ResolveSessionSlotClass();
 	void EnsureControlHintText();
 	void UpdateControlHintText();
 	USessionSlot* CreateSessionSlotWidget(const FServerInfo& ServerInfo, int32 SessionIndex, bool bIsSelected);

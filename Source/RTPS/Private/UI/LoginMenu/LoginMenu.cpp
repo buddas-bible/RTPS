@@ -8,7 +8,16 @@
 #include "Components/TextBlock.h"
 #include "Components/WidgetSwitcher.h"
 #include "SessionSlot.h"
+#include "UObject/ConstructorHelpers.h"
 #include <Kismet/KismetSystemLibrary.h>
+
+ULoginMenu::ULoginMenu(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	// Keep the default row widget as a hard reference so it is included in cooked builds.
+	static ConstructorHelpers::FClassFinder<USessionSlot> DefaultSessionSlot(TEXT("/Game/WBP_SessionSlot"));
+	SessionSlotClass = DefaultSessionSlot.Class;
+}
 
 void ULoginMenu::NativeConstruct()
 {
@@ -49,7 +58,6 @@ void ULoginMenu::NativeConstruct()
 		QuitButton->OnClicked.AddDynamic(this, &ULoginMenu::ExitGame);
 	}
 
-	ResolveSessionSlotClass();
 	EnsureControlHintText();
 	RefreshSessionListUI();
 	UpdateControlHintText();
@@ -129,20 +137,6 @@ void ULoginMenu::HandleServerListUpdated()
 	BP_OnServerListUpdated();
 }
 
-void ULoginMenu::ResolveSessionSlotClass()
-{
-	if (SessionSlotClass != nullptr)
-	{
-		return;
-	}
-
-	SessionSlotClass = LoadClass<USessionSlot>(nullptr, TEXT("/Game/WBP_SessionSlot.WBP_SessionSlot_C"));
-	if (SessionSlotClass == nullptr)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("LoginMenu: failed to load /Game/WBP_SessionSlot."));
-	}
-}
-
 void ULoginMenu::EnsureControlHintText()
 {
 	if (ControlHintText != nullptr || WidgetTree == nullptr)
@@ -202,7 +196,6 @@ void ULoginMenu::RebuildSessionList()
 		return;
 	}
 
-	ResolveSessionSlotClass();
 	SessionListScrollBox->ClearChildren();
 
 	const TArray<FServerInfo> ServerList = GetServerList();
@@ -259,7 +252,15 @@ void ULoginMenu::RefreshSessionListUI()
 
 void ULoginMenu::SelectSessionByIndex(int32 SessionIndex)
 {
+	const TArray<FServerInfo> ServerList = GetServerList();
+	if (!ServerList.IsValidIndex(SessionIndex))
+	{
+		return;
+	}
+
 	SelectedSessionIndex = SessionIndex;
+	UE_LOG(LogTemp, Log, TEXT("[RTPSValidation] Selected session row. Index=%d ServerName=%s"),
+		SessionIndex, *ServerList[SessionIndex].ServerName);
 	RebuildSessionList();
 }
 

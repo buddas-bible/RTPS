@@ -23,7 +23,7 @@ public:
 
 protected:
 	bool CanStartQuest(FString* OutFailureReason = nullptr) const;
-	void RefreshLobbyState() const;
+	void RefreshLobbyState(const APlayerState* LeavingPlayer = nullptr) const;
 	bool AreAllPlayersReady() const;
 	bool IsHostPlayer(const APlayerController* PlayerController) const;
 	void ApplySelectedQuestToLobbyState() const;

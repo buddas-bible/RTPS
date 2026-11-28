@@ -2,7 +2,7 @@ param(
     [Parameter(Mandatory)]
     [string]$Directory,
     [Parameter(Mandatory)]
-    [ValidateSet('host', 'search', 'select', 'join', 'ready', 'start', 'leave')]
+    [ValidateSet('host', 'search', 'select', 'join', 'ready', 'start', 'leave', 'leave_to_menu')]
     [string]$Action,
     [string]$LobbyId
 )

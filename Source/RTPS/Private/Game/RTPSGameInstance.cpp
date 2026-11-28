@@ -233,6 +233,29 @@ bool URTPSGameInstance::JoinGameSessionByIndex( int32 SessionIndex )
 	return bResult;
 }
 
+bool URTPSGameInstance::LeaveLobby()
+{
+	const UWorld* World = GetWorld();
+	if (!World || !World->GetMapName().Contains(GetLobbyMapName()) || bReturningToMenuAfterLeave)
+	{
+		return false;
+	}
+
+	if (SessionInterface.IsValid() && SessionInterface->GetNamedSession(HostedSessionName))
+	{
+		bReturningToMenuAfterLeave = true;
+		if (SessionInterface->DestroySession(HostedSessionName))
+		{
+			return true;
+		}
+		bReturningToMenuAfterLeave = false;
+		return false;
+	}
+
+	UGameplayStatics::OpenLevel(this, FName(*GetMainMenuMapPath()), true);
+	return true;
+}
+
 void URTPSGameInstance::StartHostedSession()
 {
 	if( !SessionInterface.IsValid() )
@@ -532,7 +555,11 @@ bool URTPSGameInstance::PollRuntimeTestCommand(float DeltaTime)
 
 	Command->TryGetStringField(TEXT("lobby_id"), LobbyId);
 	bool bAccepted = false;
-	if (Action == TEXT("leave"))
+	if (Action == TEXT("leave_to_menu"))
+	{
+		bAccepted = LeaveLobby();
+	}
+	else if (Action == TEXT("leave"))
 	{
 		bAccepted = SessionInterface.IsValid() && SessionInterface->GetNamedSession(HostedSessionName)
 			&& SessionInterface->DestroySession(HostedSessionName);
@@ -744,6 +771,15 @@ void URTPSGameInstance::OnStartSessionComplete(FName SessionName, bool Succeeded
 void URTPSGameInstance::OnDestroySessionComplete( FName SessionName, bool bWasSuccessful )
 {
 	RTPSRuntimeTest::Emit(TEXT("session_destroyed"), {{TEXT("success"), bWasSuccessful ? TEXT("true") : TEXT("false")}});
+	if (bReturningToMenuAfterLeave && SessionName == HostedSessionName)
+	{
+		bReturningToMenuAfterLeave = false;
+		if (bWasSuccessful)
+		{
+			UGameplayStatics::OpenLevel(this, FName(*GetMainMenuMapPath()), true);
+		}
+		return;
+	}
 	UE_LOG(
 		LogTemp,
 		Log,

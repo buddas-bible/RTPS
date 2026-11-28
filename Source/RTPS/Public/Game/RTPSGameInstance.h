@@ -90,6 +90,8 @@ public:
 	UFUNCTION(BlueprintCallable)
 	bool JoinGameSessionByIndex(int32 SessionIndex);
 
+	bool LeaveLobby();
+
 	void StartHostedSession();
 #pragma endregion
 
@@ -166,6 +168,7 @@ private:
 	bool CanStartHostedSession(FString& OutReason, EOnlineSessionState::Type& OutSessionState) const;
 
 	bool bPendingJoinAfterDestroy = false;
+	bool bReturningToMenuAfterLeave = false;
 	int32 PendingJoinSessionIndex = INDEX_NONE;
 
 	const FName HostedSessionName = TEXT( "RTPSDemoSession" );

@@ -72,9 +72,10 @@ void ARTPSLobbyGameMode::HandleStartingNewPlayer_Implementation(APlayerControlle
 
 void ARTPSLobbyGameMode::Logout(AController* Exiting)
 {
+	const APlayerState* LeavingPlayer = Exiting ? Exiting->GetPlayerState<APlayerState>() : nullptr;
 	Super::Logout(Exiting);
 
-	RefreshLobbyState();
+	RefreshLobbyState(LeavingPlayer);
 	MaybeRunAutoLobbyFlow();
 }
 
@@ -326,7 +327,7 @@ void ARTPSLobbyGameMode::HandleChatMessage(ARTPSCommonPlayerController* FromPlay
 	BroadcastChatMessage(FormattedMessage);
 }
 
-void ARTPSLobbyGameMode::RefreshLobbyState() const
+void ARTPSLobbyGameMode::RefreshLobbyState(const APlayerState* LeavingPlayer) const
 {
 	ARTPSGameState* RTPSGameState = GetGameState<ARTPSGameState>();
 	if (RTPSGameState == nullptr)
@@ -339,7 +340,11 @@ void ARTPSLobbyGameMode::RefreshLobbyState() const
 
 	for (APlayerState* PlayerState : RTPSGameState->PlayerArray)
 	{
-		if (ARTPSPlayerState* RTPSPlayerState = Cast<ARTPSPlayerState>(PlayerState))
+		if (PlayerState == LeavingPlayer)
+		{
+			continue;
+		}
+		if (const ARTPSPlayerState* RTPSPlayerState = Cast<ARTPSPlayerState>(PlayerState))
 		{
 			++ConnectedPlayers;
 			ReadyPlayers += RTPSPlayerState->IsLobbyReady() ? 1 : 0;

@@ -45,6 +45,18 @@ void ARTPSLobbyPlayerController::SetupInputComponent()
 	InputComponent->BindKey(EKeys::E, IE_Pressed, this, &ARTPSLobbyPlayerController::RequestSelectNextQuest);
 	InputComponent->BindKey(EKeys::R, IE_Pressed, this, &ARTPSLobbyPlayerController::ToggleLobbyReady);
 	InputComponent->BindKey(EKeys::G, IE_Pressed, this, &ARTPSLobbyPlayerController::RequestStartQuest);
+	InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &ARTPSLobbyPlayerController::RequestLeaveLobby);
+}
+
+void ARTPSLobbyPlayerController::RequestLeaveLobby()
+{
+	if (IsLocalController() && IsLobbyMap())
+	{
+		if (URTPSGameInstance* GameInstance = GetGameInstance<URTPSGameInstance>())
+		{
+			GameInstance->LeaveLobby();
+		}
+	}
 }
 
 void ARTPSLobbyPlayerController::ToggleLobbyReady()
@@ -99,6 +111,7 @@ TArray<FString> ARTPSLobbyPlayerController::GetControlHintLines() const
 			TEXT("Q / E : Select quest (host)"),
 			TEXT("R : Toggle ready"),
 			TEXT("G : Start quest"),
+			TEXT("Esc : Leave lobby"),
 			TEXT("Enter : Open / send chat"),
 			TEXT("Hold Ctrl : Enable cursor")
 		};

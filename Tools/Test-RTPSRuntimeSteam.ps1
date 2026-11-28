@@ -7,7 +7,8 @@ param(
     [string]$VBoxManage = "$env:ProgramFiles\Oracle\VirtualBox\VBoxManage.exe",
     [string]$OutputDirectory = (Join-Path $Build 'Verification'),
     [ValidateRange(10, 600)][int]$TimeoutSeconds = 120,
-    [ValidatePattern('^\d{8}-\d{6}-[0-9a-f]{8}$')][string]$GuestDeploymentId
+    [ValidatePattern('^\d{8}-\d{6}-[0-9a-f]{8}$')][string]$GuestDeploymentId,
+    [switch]$VerifyRejoin
 )
 
 $ErrorActionPreference = 'Stop'
@@ -104,9 +105,9 @@ function Send-Command([string]$Side, [string]$Action, [string]$LobbyId = '') {
     if ($reply.status -ne 'accepted') { throw "$Side rejected $Action" }
 }
 
-function Close-Session([string]$Side) {
+function Close-Session([string]$Side, [int]$Count = 1) {
     Send-Command $Side leave
-    $null = Wait-Trace $Side 'session_destroyed' { param($e) $e.success -eq 'true' }
+    $null = Wait-Trace $Side 'session_destroyed' { param($e) $e.success -eq 'true' } $Count
 }
 
 try {
@@ -235,8 +236,43 @@ schtasks /Run /TN $task
         }
         Write-Report 'stage_passed' 'Victory/Defeat recorded and both players returned'
     }
+    $peerLeaveCount = 1
+    if ($VerifyRejoin) {
+        $stage = 'leave_to_menu'
+        $peerBefore = @(Read-Trace Peer)
+        $hostBefore = @(Read-Trace Host)
+        Send-Command Peer leave_to_menu
+        $null = Wait-Trace Peer 'session_destroyed' { param($e) $e.success -eq 'true' }
+        $joinedSession = $false
+        $menuCount = @($peerBefore | Where-Object { $_.event -eq 'map_loaded' -and $_.map -eq 'MainMenuMap' }).Count
+        $null = Wait-Trace Peer 'map_loaded' { param($e) $e.map -eq 'MainMenuMap' } ($menuCount + 1)
+        $aloneCount = @($hostBefore | Where-Object { $_.event -eq 'lobby_state' -and $_.connected -eq '1' }).Count
+        $null = Wait-Trace Host 'lobby_state' { param($e) $e.connected -eq '1' } ($aloneCount + 1)
+        Write-Report 'stage_passed' 'Peer returned to the main menu and the host kept the lobby open'
+
+        $stage = 'rejoin'
+        $searchCount = @($peerBefore | Where-Object event -eq 'search_completed').Count
+        Send-Command Peer search
+        $search = Wait-Trace Peer 'search_completed' { $true } ($searchCount + 1)
+        if ($search.success -ne 'true') { throw 'Steam lobby search after leaving failed.' }
+        $rowCount = @($peerBefore | Where-Object { $_.event -eq 'session_row_added' -and $_.lobby_id -eq $lobbyId }).Count
+        $null = Wait-Trace Peer 'session_row_added' { param($e) $e.lobby_id -eq $lobbyId } ($rowCount + 1)
+        Send-Command Peer select $lobbyId
+        $null = Wait-Trace Peer 'row_selected' { param($e) $e.lobby_id -eq $lobbyId } 2
+        Send-Command Peer join $lobbyId
+        $rejoined = Wait-Trace Peer 'join_completed' { $true } 2
+        if ($rejoined.result -ne '0') { throw "Steam rejoin returned $($rejoined.result)" }
+        $joinedSession = $true
+        $null = Wait-Trace Peer 'join_address' { param($e) $e.address -like 'steam.*' } 2
+        $lobbyCount = @($peerBefore | Where-Object { $_.event -eq 'map_loaded' -and $_.map -eq 'CharacterTestLevel' }).Count
+        $null = Wait-Trace Peer 'map_loaded' { param($e) $e.map -eq 'CharacterTestLevel' } ($lobbyCount + 1)
+        $connectedCount = @($hostBefore | Where-Object { $_.event -eq 'lobby_state' -and $_.connected -eq '2' }).Count
+        $null = Wait-Trace Host 'lobby_state' { param($e) $e.connected -eq '2' } ($connectedCount + 1)
+        $peerLeaveCount = 2
+        Write-Report 'stage_passed' "Peer rejoined Steam lobby $lobbyId without restarting"
+    }
     $stage = 'leave'
-    Close-Session Peer
+    Close-Session Peer $peerLeaveCount
     $joinedSession = $false
     Close-Session Host
     $hostedSession = $false

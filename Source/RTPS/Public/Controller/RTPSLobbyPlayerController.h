@@ -17,6 +17,9 @@ public:
 	void RequestStartQuest();
 
 	UFUNCTION(BlueprintCallable)
+	void RequestLeaveLobby();
+
+	UFUNCTION(BlueprintCallable)
 	void RequestSelectPreviousQuest();
 
 	UFUNCTION(BlueprintCallable)

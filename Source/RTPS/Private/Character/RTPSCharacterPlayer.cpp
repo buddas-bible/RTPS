@@ -4,6 +4,7 @@
 #include "Character/RTPSCharacterPlayer.h"
 #include "Camera/CameraComponent.h"
 #include "Components/SpotLightComponent.h"
+#include "Components/WidgetComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "InputMappingContext.h"
@@ -15,6 +16,8 @@
 #include "Controller/RTPSPlayerController.h"
 #include "Engine/Engine.h"
 #include "InputCoreTypes.h"
+#include "State/RTPSPlayerState.h"
+#include "UI/NameTag.h"
 #include "VoxelAuthoring/VoxelBrush.h"
 #include "VoxelAuthoring/VoxelEditComponent.h"
 
@@ -197,6 +200,7 @@ void ARTPSCharacterPlayer::SetupPlayerInputComponent( UInputComponent* PlayerInp
 void ARTPSCharacterPlayer::BeginPlay()
 {
 	Super::BeginPlay();
+	BindNameTags();
 
 	RespawnLocation = GetActorLocation();
 	RespawnRotation = GetActorRotation();
@@ -216,6 +220,31 @@ void ARTPSCharacterPlayer::BeginPlay()
 		}
 	}
 
+}
+
+void ARTPSCharacterPlayer::OnPlayerStateChanged(APlayerState* NewPlayerState, APlayerState* OldPlayerState)
+{
+	Super::OnPlayerStateChanged(NewPlayerState, OldPlayerState);
+	if (HasActorBegunPlay())
+	{
+		BindNameTags();
+	}
+}
+
+void ARTPSCharacterPlayer::BindNameTags()
+{
+	const TInlineComponentArray<UWidgetComponent*> Widgets(this);
+	for (UWidgetComponent* Widget : Widgets)
+	{
+		if (Widget->GetWidgetClass() && Widget->GetWidgetClass()->IsChildOf(UNameTag::StaticClass()))
+		{
+			Widget->InitWidget();
+			if (UNameTag* NameTag = Cast<UNameTag>(Widget->GetUserWidgetObject()))
+			{
+				NameTag->BindPlayerState(GetPlayerState<ARTPSPlayerState>());
+			}
+		}
+	}
 }
 
 void ARTPSCharacterPlayer::Tick( float DeltaTime )

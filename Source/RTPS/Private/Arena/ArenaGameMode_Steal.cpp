@@ -116,13 +116,6 @@ void AArenaGameMode_Steal::Tick(float DeltaSeconds)
 		}
 		RoundStartedAt = Now;
 		State->SetMatchPhase(ERTPSMatchPhase::ArenaPlaying);
-#if !UE_BUILD_SHIPPING
-		if (FParse::Param(FCommandLine::Get(), TEXT("RTPSAutoArenaDemo")))
-		{
-			RoundPlayers[0]->GetPlayerState<APlayerState>()->SetPlayerName(TEXT("Host"));
-			RoundPlayers[1]->GetPlayerState<APlayerState>()->SetPlayerName(TEXT("Guest"));
-		}
-#endif
 		RTPSRuntimeTest::Emit(TEXT("round_started"));
 		UE_LOG(LogTemp, Log, TEXT("[RTPSValidation] Arena round started."));
 	}

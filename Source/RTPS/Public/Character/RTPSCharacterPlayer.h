@@ -28,6 +28,7 @@ public:
 protected:
 #pragma region Actor lifecycle
 	void BeginPlay() override;
+	void OnPlayerStateChanged(APlayerState* NewPlayerState, APlayerState* OldPlayerState) override;
 	void Tick(float DeltaTime) override;
 #pragma endregion
 
@@ -100,6 +101,8 @@ protected:
 	TObjectPtr<class USpotLightComponent> FlashlightComponent;
 
 private:
+	void BindNameTags();
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Voxel", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UVoxelEditComponent> VoxelEditComp;
 

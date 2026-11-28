@@ -12,6 +12,7 @@ class RTPS_API ARTPSPlayerState : public APlayerState
 public:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	virtual void OnRep_PlayerName() override;
+	FSimpleMulticastDelegate OnPlayerNameChanged;
 
 	void SetLobbyReady(bool bNewLobbyReady);
 	bool IsLobbyReady() const;

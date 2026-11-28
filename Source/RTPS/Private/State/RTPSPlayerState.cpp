@@ -18,6 +18,7 @@ void ARTPSPlayerState::OnRep_PlayerName()
 {
 	Super::OnRep_PlayerName();
 
+	OnPlayerNameChanged.Broadcast();
 	UE_LOG(LogTemp, Log, TEXT("Player Name Updated: %s"), *GetPlayerName());
 }
 

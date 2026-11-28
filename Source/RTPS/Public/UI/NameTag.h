@@ -6,6 +6,8 @@
 #include "Blueprint/UserWidget.h"
 #include "NameTag.generated.h"
 
+class ARTPSPlayerState;
+
 /**
  * 
  */
@@ -17,8 +19,13 @@ class RTPS_API UNameTag : public UUserWidget
 public:
 	UFUNCTION( BlueprintCallable, Category = "NameTag" )
 	void SetNameText( const FString& NewName );
+	void BindPlayerState(ARTPSPlayerState* NewPlayerState);
 	
 protected:
 	UPROPERTY( meta = ( BindWidget ) )
 	class UTextBlock* NameTextBlock;
+
+private:
+	void RefreshPlayerName();
+	TWeakObjectPtr<ARTPSPlayerState> NamePlayerState;
 };

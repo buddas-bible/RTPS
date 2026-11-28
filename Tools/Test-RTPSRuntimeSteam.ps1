@@ -24,6 +24,8 @@ $hostGame = $null
 $shareAdded = $false
 $taskAdded = $false
 $guestPrepared = $false
+$hostedSession = $false
+$joinedSession = $false
 $stage = 'preflight'
 $round = 0
 $outcome = 'FAIL'
@@ -112,6 +114,11 @@ function Send-Command([string]$Side, [string]$Action, [string]$LobbyId = '') {
     if ($reply.status -ne 'accepted') { throw "$Side rejected $Action" }
 }
 
+function Close-Session([string]$Side) {
+    Send-Command $Side leave
+    $null = Wait-Trace $Side 'session_destroyed' { param($e) $e.success -eq 'true' }
+}
+
 try {
     Write-Report 'test_started'
     $auth = @("--username=$GuestUser", "--passwordfile=$((Resolve-Path -LiteralPath $GuestPasswordFile).Path)")
@@ -155,11 +162,11 @@ if ($Snapshot) {
 $exe = '@BUILD@\RTPS\Binaries\Win64\RTPS.exe'
 $p = Start-Process -FilePath $exe -WorkingDirectory (Split-Path $exe) -PassThru -WindowStyle Hidden -ArgumentList @(
     '-nullrhi', '-nosound', '-unattended', '-NoSplash', '-NoCrashDialog', '-ExecCmds="t.MaxFPS 60"',
-    '-RTPSRuntimeTestDir=@RUN@', '-abslog=@RUN@\Peer.log')
+    '-RTPSRuntimeTestDir=@RUN@', '-RTPSLobbyTestRun=@RUN_ID@', '-abslog=@RUN@\Peer.log')
 Set-Content -LiteralPath '@RUN@\peer.pid' -Value $p.Id
 $p.WaitForExit()
 '@
-    $launcherBody.Replace('@BUILD@', $guestBuild).Replace('@RUN@', $guestDirectory) |
+    $launcherBody.Replace('@BUILD@', $guestBuild).Replace('@RUN@', $guestDirectory).Replace('@RUN_ID@', $runId) |
         Set-Content -LiteralPath $launcher -Encoding UTF8
     Send-GuestFile $launcher "$guestDirectory\Launch-Peer.ps1"
     $taskSetup = Join-Path $spool 'Start-Peer.cmd'
@@ -172,6 +179,7 @@ schtasks /Run /TN $task
     Send-GuestFile $taskSetup "$guestDirectory\Start-Peer.cmd"
     $arguments = @('-nullrhi', '-nosound', '-unattended', '-NoSplash', '-NoCrashDialog', '-ExecCmds="t.MaxFPS 60"',
         ('-abslog="' + $hostDirectory + '/Host.log"'), ('-RTPSRuntimeTestDir="' + $hostDirectory + '"'),
+        "-RTPSLobbyTestRun=$runId",
         '-RTPSAutoQuestId=voxel_arena', '-RTPSAutoArenaDemo')
     $hostGame = Start-Process -FilePath $exe -ArgumentList $arguments -WorkingDirectory (Split-Path $exe) -WindowStyle Hidden -PassThru
     $taskAdded = $true
@@ -184,11 +192,18 @@ schtasks /Run /TN $task
     $stage = 'host'
     Send-Command Host host
     $created = Wait-Trace Host 'host_created' { param($e) $e.success -eq 'true' -and $e.lobby_id }
+    $hostedSession = $true
     $lobbyId = $created.lobby_id
     $stage = 'search_and_row'
     for ($attempt = 1; $attempt -le 4; $attempt++) {
         Send-Command Peer search
-        $null = Wait-Trace Peer 'search_completed' { param($e) $e.success -eq 'true' } $attempt
+        $completed = Wait-Trace Peer 'search_completed' { $true } $attempt
+        if ($completed.success -ne 'true') {
+            if ($attempt -eq 4) { throw "Steam lobby search returned success:false on attempt $attempt." }
+            Write-Report 'search_retry' "Steam lobby search returned success:false on attempt $attempt."
+            Start-Sleep -Seconds 5
+            continue
+        }
         try {
             $row = Wait-Trace Peer 'session_row_added' { param($e) $e.lobby_id -eq $lobbyId } 1 5
             break
@@ -205,6 +220,7 @@ schtasks /Run /TN $task
     Send-Command Peer join $lobbyId
     $joined = Wait-Trace Peer 'join_completed'
     if ($joined.result -ne '0') { throw "Steam join returned $($joined.result)" }
+    $joinedSession = $true
     $null = Wait-Trace Peer 'join_address' { param($e) $e.address -like 'steam.*' }
     $null = Wait-Trace Peer 'map_loaded' { param($e) $e.map -eq 'CharacterTestLevel' }
     if (!(Select-String -LiteralPath "$hostDirectory/Host.log" -SimpleMatch 'SteamSockets: New connection' -Quiet)) {
@@ -234,6 +250,11 @@ schtasks /Run /TN $task
         }
         Write-Report 'stage_passed' 'Victory/Defeat recorded and both players returned'
     }
+    $stage = 'leave'
+    Close-Session Peer
+    $joinedSession = $false
+    Close-Session Host
+    $hostedSession = $false
     $stage = 'complete'
     $round = 2
     $outcome = 'PASS'
@@ -241,6 +262,8 @@ schtasks /Run /TN $task
     $failure = $_.Exception.Message
 } finally {
     Write-Report 'test_finished' $failure
+    if ($joinedSession) { try { Close-Session Peer } catch {} }
+    if ($hostedSession) { try { Close-Session Host } catch {} }
     if ($hostGame -and !$hostGame.HasExited) { Stop-Process -InputObject $hostGame -ErrorAction SilentlyContinue }
     if ($guestPrepared) {
         try { Copy-PeerTrace } catch {}

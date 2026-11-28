@@ -16,6 +16,22 @@
 #include <OnlineSessionSettings.h>
 #include <OnlineSubsystem.h>
 
+namespace
+{
+	const FName SteamLobbyProjectKey(TEXT("RTPS_PROJECT"));
+	const FString SteamLobbyProjectValue(TEXT("RTPS_VoxelArena"));
+	const FName SteamLobbyTestRunKey(TEXT("RTPS_TEST_RUN"));
+
+	FString GetSteamLobbyTestRun()
+	{
+		FString Run;
+		if (!RTPSRuntimeTest::Directory().IsEmpty())
+		{
+			FParse::Value(FCommandLine::Get(), TEXT("RTPSLobbyTestRun="), Run);
+		}
+		return Run;
+	}
+}
 
 #pragma region Static runtime defaults
 FString URTPSGameInstance::GetMainMenuMapPath()
@@ -108,6 +124,15 @@ void URTPSGameInstance::CreateGameSession()
 
 	// SessionSettings.Set(FName("SERVER_NAME"), FString("RTPS Lobby"), EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
 	SessionSettings.Set( FName( "MatchType" ), FString( "FreeForAll" ), EOnlineDataAdvertisementType::ViaOnlineServiceAndPing );
+	if (!bIsLanMatch)
+	{
+		SessionSettings.Set(SteamLobbyProjectKey, SteamLobbyProjectValue, EOnlineDataAdvertisementType::ViaOnlineService);
+		const FString TestRun = GetSteamLobbyTestRun();
+		if (!TestRun.IsEmpty())
+		{
+			SessionSettings.Set(SteamLobbyTestRunKey, TestRun, EOnlineDataAdvertisementType::ViaOnlineService);
+		}
+	}
 
 	UE_LOG(
 		LogTemp,
@@ -144,7 +169,16 @@ void URTPSGameInstance::FindGameSessions()
 	SessionSearch->MaxSearchResults = 100;
 
 	if( !bIsLanQuery )
+	{
 		SessionSearch->QuerySettings.Set( SEARCH_LOBBIES, true, EOnlineComparisonOp::Equals );
+		// Steam App ID 480 is shared. Filter before Steam requests metadata for each lobby.
+		SessionSearch->QuerySettings.Set(SteamLobbyProjectKey, SteamLobbyProjectValue, EOnlineComparisonOp::Equals);
+		const FString TestRun = GetSteamLobbyTestRun();
+		if (!TestRun.IsEmpty())
+		{
+			SessionSearch->QuerySettings.Set(SteamLobbyTestRunKey, TestRun, EOnlineComparisonOp::Equals);
+		}
+	}
 
 	UE_LOG( LogTemp, Log, TEXT( "[RTPSValidation] FindGameSessions invoked. IsLanQuery=%d" ), bIsLanQuery );
 
@@ -498,7 +532,12 @@ bool URTPSGameInstance::PollRuntimeTestCommand(float DeltaTime)
 
 	Command->TryGetStringField(TEXT("lobby_id"), LobbyId);
 	bool bAccepted = false;
-	if (ARTPSLobbyPlayerController* Lobby = Cast<ARTPSLobbyPlayerController>(GetFirstLocalPlayerController()))
+	if (Action == TEXT("leave"))
+	{
+		bAccepted = SessionInterface.IsValid() && SessionInterface->GetNamedSession(HostedSessionName)
+			&& SessionInterface->DestroySession(HostedSessionName);
+	}
+	else if (ARTPSLobbyPlayerController* Lobby = Cast<ARTPSLobbyPlayerController>(GetFirstLocalPlayerController()))
 	{
 		UWorld* World = Lobby->GetWorld();
 		if (World && World->GetMapName().Contains(GetLobbyMapName()) && Action == TEXT("ready"))
@@ -704,6 +743,7 @@ void URTPSGameInstance::OnStartSessionComplete(FName SessionName, bool Succeeded
 
 void URTPSGameInstance::OnDestroySessionComplete( FName SessionName, bool bWasSuccessful )
 {
+	RTPSRuntimeTest::Emit(TEXT("session_destroyed"), {{TEXT("success"), bWasSuccessful ? TEXT("true") : TEXT("false")}});
 	UE_LOG(
 		LogTemp,
 		Log,

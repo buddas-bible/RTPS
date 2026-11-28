@@ -90,6 +90,8 @@ pwsh -NoProfile -File ./Tools/Test-RTPSCommitSteam.ps1 -Commit 71b2425 -EngineRo
 
 커밋을 별도 작업 트리에 체크아웃하고 에디터 모듈과 Win64 Development 게임을 빌드한 뒤 한 번만 쿠킹·패키징합니다. 같은 패키지로 Steam 검증을 `-Repeat` 횟수만큼 순차 실행합니다. 기본값은 1회입니다.
 
+통합 실행은 VM에도 런타임 패키지를 한 번만 복사합니다. PDB는 호스트 아카이브에 보관하며 VM 배포에서 제외합니다. 각 회차의 로그는 별도 폴더에 기록하고, 모든 회차가 끝나거나 검증이 실패하면 VM의 배포 사본을 정리합니다. 통합 JSONL의 `guest_build_deployed`와 `guest_build_removed`로 배포와 정리를 확인할 수 있습니다.
+
 기본 출력은 Windows 빌드 경로 길이를 줄이기 위해 `Documents/RTPS-V/<run_id>/`에 저장합니다. 사용자 프로필 경로가 길면 `-OutputDirectory`로 더 짧은 경로를 지정할 수 있습니다. 최상위 `result.jsonl`에는 `attempt_finished`마다 회차 번호, `PASS` 또는 `FAIL`, 단계, 상세 JSONL 경로가 남습니다. 한 회차가 실패해도 남은 회차를 실행합니다. 마지막 `test_finished`는 전부 통과했을 때 `PASS`와 종료 코드 0을 반환합니다. 실패가 있으면 `FAIL`과 종료 코드 1을 반환하고 첫 실패 회차와 단계를 기록합니다.
 
 2026년 11월 28일, UE 5.8.4에서 `71b2425`를 위 명령으로 검증했습니다. 기본 경로에서 Win64 Development 패키지를 한 번 만들고, 같은 패키지로 호스트와 VirtualBox VM을 연결해 **3회 연속 `PASS`**를 기록했습니다. 화면 캡처 없이 방 검색·선택, SteamSockets 참가, 첫 경기와 재경기 후 양쪽 로비 복귀, 양쪽 Steam 세션 정상 종료를 확인했습니다. 검색 재시도는 0회였고 통합 실행 종료 코드는 0이었습니다. [검증 커밋](https://github.com/buddas-bible/RTPS/commit/71b242561071610c753ac37238f62c288e62c8bd)

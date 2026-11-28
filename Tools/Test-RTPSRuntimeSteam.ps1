@@ -2,14 +2,16 @@
 param(
     [Parameter(Mandatory)][string]$Build,
     [Parameter(Mandatory)][string]$VmName,
-    [Parameter(Mandatory)][ValidatePattern('^[A-Za-z0-9_.-]+$')][string]$GuestUser,
+    [Parameter(Mandatory)][ValidatePattern('^(?!\.{1,2}$)[A-Za-z0-9_.-]+$')][string]$GuestUser,
     [Parameter(Mandatory)][string]$GuestPasswordFile,
     [string]$VBoxManage = "$env:ProgramFiles\Oracle\VirtualBox\VBoxManage.exe",
     [string]$OutputDirectory = (Join-Path $Build 'Verification'),
-    [ValidateRange(10, 600)][int]$TimeoutSeconds = 120
+    [ValidateRange(10, 600)][int]$TimeoutSeconds = 120,
+    [ValidatePattern('^\d{8}-\d{6}-[0-9a-f]{8}$')][string]$GuestDeploymentId
 )
 
 $ErrorActionPreference = 'Stop'
+. "$PSScriptRoot/RTPSGuestDeployment.ps1"
 $runId = "$(Get-Date -Format yyyyMMdd-HHmmss)-$([guid]::NewGuid().ToString('N').Substring(0, 8))"
 $runDirectory = (New-Item -ItemType Directory -Path (Join-Path $OutputDirectory $runId) -Force).FullName
 $hostDirectory = (New-Item -ItemType Directory -Path (Join-Path $runDirectory 'Host')).FullName
@@ -17,11 +19,12 @@ $spool = (New-Item -ItemType Directory -Path (Join-Path $runDirectory 'Spool')).
 $report = Join-Path $runDirectory 'result.jsonl'
 $peerTrace = Join-Path $runDirectory 'Peer-events.jsonl'
 $guestDirectory = "C:\Users\$GuestUser\RTPSRuntime-$runId"
-$guestBuild = "$guestDirectory\Build"
-$share = "RTPS-$runId"
+$ownsGuestBuild = !$GuestDeploymentId
+if ($ownsGuestBuild) { $GuestDeploymentId = $runId }
+$guestBuild = "C:\Users\$GuestUser\RTPSBuild-$GuestDeploymentId"
 $task = "RTPS-Steam-$runId"
 $hostGame = $null
-$shareAdded = $false
+$guestDeploymentStarted = $false
 $taskAdded = $false
 $guestPrepared = $false
 $hostedSession = $false
@@ -47,19 +50,6 @@ function Write-Report([string]$Event, [string]$Message = '') {
     $line = $record | ConvertTo-Json -Compress
     [IO.File]::AppendAllText($report, $line + [Environment]::NewLine)
     Write-Host $line
-}
-
-function Invoke-VBox([string[]]$Arguments) {
-    $output = & $VBoxManage @Arguments 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        throw "VBoxManage failed ($LASTEXITCODE): $($output -join ' ')"
-    }
-    $output
-}
-
-function Invoke-Guest([string]$Command) {
-    Invoke-VBox (@('guestcontrol', $VmName, 'run', '--exe=C:\Windows\System32\cmd.exe') + $auth +
-        @('--timeout=120000', '--wait-stdout', '--wait-stderr', '--', 'cmd.exe', '/c', $Command))
 }
 
 function Copy-GuestFile([string]$Source, [string]$Destination) {
@@ -130,17 +120,12 @@ try {
     if ($info -notcontains 'VMState="running"') { throw 'The existing VM must be running with Steam signed in.' }
 
     $stage = 'deploy_peer'
-    Invoke-VBox @('sharedfolder', 'add', $VmName, '--name', $share, '--hostpath', $package, '--readonly', '--transient') | Out-Null
-    $shareAdded = $true
+    if ($ownsGuestBuild) {
+        $guestDeploymentStarted = $true
+        Publish-GuestBuild $package $GuestDeploymentId
+    }
     Invoke-Guest "mkdir $guestDirectory" | Out-Null
     $guestPrepared = $true
-    Invoke-Guest "robocopy \\VBOXSVR\$share $guestBuild /E /R:2 /W:2 /NFL /NDL /NJH /NJS & if errorlevel 8 (exit /b 8) else (exit /b 0)" | Out-Null
-    foreach ($relative in 'RTPS/Binaries/Win64/RTPS.exe', $manifest) {
-        $guestPath = "$guestBuild\$($relative.Replace('/', '\'))"
-        $expected = (Get-FileHash -LiteralPath "$package/$relative").Hash
-        $actual = Invoke-Guest "certutil -hashfile $guestPath SHA256"
-        if ($expected -notin @($actual | ForEach-Object { $_.Trim() })) { throw "Guest build hash mismatch: $relative" }
-    }
 
     $stage = 'launch'
     $launcher = Join-Path $spool 'Launch-Peer.ps1'
@@ -261,7 +246,6 @@ schtasks /Run /TN $task
 } catch {
     $failure = $_.Exception.Message
 } finally {
-    Write-Report 'test_finished' $failure
     if ($joinedSession) { try { Close-Session Peer } catch {} }
     if ($hostedSession) { try { Close-Session Host } catch {} }
     if ($hostGame -and !$hostGame.HasExited) { Stop-Process -InputObject $hostGame -ErrorAction SilentlyContinue }
@@ -278,9 +262,21 @@ schtasks /Run /TN $task
         } catch {}
         try { Invoke-Guest "schtasks /Delete /TN $task /F" | Out-Null } catch {}
     }
-    if ($shareAdded) {
-        try { Invoke-VBox @('sharedfolder', 'remove', $VmName, '--name', $share, '--transient') | Out-Null } catch {}
+    try {
+        if ($guestPrepared) {
+            Invoke-Guest "del /Q $guestDirectory\Launch-Peer.ps1 $guestDirectory\Start-Peer.cmd $guestDirectory\peer.pid $guestDirectory\command.json $guestDirectory\incoming.json $guestDirectory\events-snapshot.jsonl" | Out-Null
+        }
+    } catch {
+        Write-Report 'cleanup_failed' $_.Exception.Message
+        if ($outcome -eq 'PASS') { $stage = 'cleanup'; $outcome = 'FAIL'; $failure = $_.Exception.Message }
     }
+    if ($guestDeploymentStarted) {
+        try { Remove-GuestBuild $GuestDeploymentId } catch {
+            Write-Report 'cleanup_failed' $_.Exception.Message
+            if ($outcome -eq 'PASS') { $stage = 'cleanup'; $outcome = 'FAIL'; $failure = $_.Exception.Message }
+        }
+    }
+    Write-Report 'test_finished' $failure
 }
 if ($outcome -ne 'PASS') { exit 1 }
 exit 0

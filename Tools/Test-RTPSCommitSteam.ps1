@@ -2,7 +2,7 @@
 param(
     [Parameter(Mandatory)][ValidatePattern('^[0-9a-fA-F]{7,40}$')][string]$Commit,
     [Parameter(Mandatory)][string]$VmName,
-    [Parameter(Mandatory)][ValidatePattern('^[A-Za-z0-9_.-]+$')][string]$GuestUser,
+    [Parameter(Mandatory)][ValidatePattern('^(?!\.{1,2}$)[A-Za-z0-9_.-]+$')][string]$GuestUser,
     [Parameter(Mandatory)][string]$GuestPasswordFile,
     [string]$EngineRoot = 'E:/Game/UE_5.8',
     [string]$OutputDirectory = (Join-Path $env:USERPROFILE 'Documents/RTPS-V'),
@@ -11,6 +11,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+. "$PSScriptRoot/RTPSGuestDeployment.ps1"
 $runId = "$(Get-Date -Format yyyyMMdd-HHmmss)-$([guid]::NewGuid().ToString('N').Substring(0, 8))"
 $runDirectory = (New-Item -ItemType Directory -Path (Join-Path $OutputDirectory $runId) -Force).FullName
 $report = Join-Path $runDirectory 'result.jsonl'
@@ -26,6 +27,7 @@ $steamReport = $null
 $round = 0
 $attempt = 0
 $firstFailure = $null
+$guestDeploymentStarted = $false
 
 function Write-Report([string]$Event, [string]$ResultStatus = '') {
     $record = [ordered]@{
@@ -83,6 +85,12 @@ try {
     }
     Write-Report 'stage_passed'
 
+    $stage = 'steam/deploy_peer'
+    $auth = @("--username=$GuestUser", "--passwordfile=$passwordFile")
+    $guestDeploymentStarted = $true
+    Publish-GuestBuild (Join-Path $archive 'Windows') $runId
+    Write-Report 'guest_build_deployed'
+
     $steamScript = Join-Path $PSScriptRoot 'Test-RTPSRuntimeSteam.ps1'
     for ($attempt = 1; $attempt -le $Repeat; $attempt++) {
         $stage = 'steam'
@@ -94,7 +102,8 @@ try {
         Write-Report 'attempt_started'
         try {
             & (Join-Path $PSHOME 'pwsh.exe') -NoProfile -File $steamScript -Build $archive -VmName $VmName `
-                -GuestUser $GuestUser -GuestPasswordFile $passwordFile -VBoxManage $VBoxManage -OutputDirectory $attemptOutput
+                -GuestUser $GuestUser -GuestPasswordFile $passwordFile -VBoxManage $VBoxManage -OutputDirectory $attemptOutput `
+                -GuestDeploymentId $runId
             $steamExit = $LASTEXITCODE
             $steamReport = Get-ChildItem -LiteralPath $attemptOutput -Recurse -Filter 'result.jsonl' -File -ErrorAction SilentlyContinue |
                 Select-Object -First 1 -ExpandProperty FullName
@@ -128,6 +137,21 @@ try {
 } catch {
     $message = $_.Exception.Message
 } finally {
+    if ($guestDeploymentStarted) {
+        try {
+            Remove-GuestBuild $runId
+            Write-Report 'guest_build_removed'
+        } catch {
+            $cleanupError = $_.Exception.Message
+            if ($status -eq 'PASS') {
+                $stage = 'steam/cleanup'
+                $status = 'FAIL'
+                $message = $cleanupError
+            } else {
+                $message = "$message Guest build cleanup failed. $cleanupError"
+            }
+        }
+    }
     Write-Report 'test_finished' $status
 }
 

@@ -70,3 +70,37 @@ pwsh -NoProfile -File ./Tools/Test-RTPSCommitSteam.ps1 -Commit 3cb9f9f -EngineRo
 | 3 | `109775241485404176` | 2 | `PASS` |
 
 통합 `result.jsonl`에서 세 `attempt_finished`와 마지막 `test_finished`가 모두 `PASS`였고, 프로세스 종료 코드는 0이었다. 실행 ID는 `20261128-021240-82420d76`이다. 기본 출력 폴더의 `BuildCookRun.log`에서 패키징 시작이 한 번 기록됐으며, 회차별 `steam_report` 경로에서 상세 JSONL을 확인할 수 있다.
+
+## Steam 로비 검색 타임아웃 해결
+
+### 로그와 엔진 코드로 확인한 원인
+
+실패한 VM 로그에서 Steam 검색 작업은 후보 로비 ID를 9~10개 받았지만, 종료 시점에 상세 정보가 도착한 로비는 매번 하나씩 적었다. 검색은 약 15초 뒤 `success:false`로 끝났다. UE 5.8의 `FOnlineAsyncTaskSteamFindLobbiesBase`는 후보마다 `RequestLobbyData`를 호출한다. `WaitForRequestLobbyData` 상태에서는 요청한 ID 수와 응답을 받은 ID 수가 같아지기를 기다린다. 제한 시간까지 수가 일치하지 않으면 `bWasSuccessful`이 거짓이 되며, `Finalize`는 도착한 일부 결과도 방 목록에 전달하지 않는다.
+
+RTPS는 공유 개발용 Steam App ID `480`을 사용한다. 프로젝트 필터를 적용하자 후보는 줄었지만, 한 회차에서는 RTPS 후보 2개 중 1개의 상세 정보만 도착해 타임아웃이 재현됐다. 이전 검증 프로세스는 Steam 세션 종료 응답을 기다리지 않고 종료하는 방식이었으며, 어느 로비가 응답하지 않았는지는 당시 로그에서 확인할 수 없었다.
+
+### 수정
+
+- **검색 재시도** — 검색 완료의 `success:false`를 즉시 처리한다. 5초 기다린 뒤 다시 검색하며 최초 요청을 포함해 최대 네 번 시도한다. 재시도마다 `search_retry`를 기록한다.
+- **Steam에서 후보 필터링** — 호스트는 `RTPS_PROJECT` 태그를 광고하고 검색은 같은 값을 요구한다. Development 자동 검증에서는 호스트와 VM이 동일한 `RTPS_TEST_RUN` 값도 사용한다. Steam이 현재 회차에 해당하는 후보를 반환하므로, 게임이 로비 상세 정보를 요청하기 전에 범위를 줄일 수 있다.
+- **세션 정상 종료** — 재경기에서 양쪽이 로비로 돌아온 뒤 참가자와 호스트에 순서대로 `leave`를 보낸다. 각자의 `session_destroyed.success=true`를 확인한 뒤 프로세스를 정리한다.
+
+[로비 코드](Source/RTPS/Private/Game/RTPSGameInstance.cpp) · [Steam 검증 스크립트](Tools/Test-RTPSRuntimeSteam.ps1) · [수정 및 검증 커밋](https://github.com/buddas-bible/RTPS/commit/71b242561071610c753ac37238f62c288e62c8bd)
+
+### 재현과 결과
+
+앞 절과 같은 Steam 및 VirtualBox 로그인 환경에서 저장소 루트의 PowerShell로 실행한다.
+
+```powershell
+pwsh -NoProfile -File ./Tools/Test-RTPSCommitSteam.ps1 -Commit 71b2425 -EngineRoot $ue -VmName 'RTPS Steam Guest' -GuestUser rtpstest -GuestPasswordFile $guestPasswordFile -Repeat 3
+```
+
+UE 5.8.4의 기본 경로 `Documents/RTPS-V`에서 Win64 Development 패키징을 한 번 실행했다. 같은 패키지로 화면 캡처 없이 방 검색·선택·SteamSockets 참가, 첫 경기와 재경기 후 양쪽 로비 복귀까지 확인했다.
+
+| 회차 | 완료 경기 | 검색 재시도 | 세션 종료 | JSONL 결과 |
+|---:|---:|---:|---|---|
+| 1 | 2 | 0 | 호스트·VM 성공 | `PASS` |
+| 2 | 2 | 0 | 호스트·VM 성공 | `PASS` |
+| 3 | 2 | 0 | 호스트·VM 성공 | `PASS` |
+
+통합 `result.jsonl`의 마지막 `test_finished`는 `PASS`였고 종료 코드는 0이었다. 실행 ID는 `20261128-170605-f3df35bd`다. 세 회차의 결과는 자동 검증용 회차 필터가 활성화된 조건에서 얻었다.

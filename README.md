@@ -85,13 +85,15 @@ pwsh -NoProfile -File ./Tools/Test-RTPSRuntimeSteam.ps1 -Build $archive -VmName 
 로컬 Git에서 확인할 수 있는 커밋 해시를 전달합니다. 앞 절의 Steam 및 VM 준비가 필요하며, `$ue`는 UE 5.8 설치 경로입니다.
 
 ```powershell
-pwsh -NoProfile -File ./Tools/Test-RTPSCommitSteam.ps1 -Commit 3cb9f9f -EngineRoot $ue -VmName 'RTPS Steam Guest' -GuestUser rtpstest -GuestPasswordFile $guestPasswordFile -Repeat 3
+pwsh -NoProfile -File ./Tools/Test-RTPSCommitSteam.ps1 -Commit 71b2425 -EngineRoot $ue -VmName 'RTPS Steam Guest' -GuestUser rtpstest -GuestPasswordFile $guestPasswordFile -Repeat 3
 ```
 
 커밋을 별도 작업 트리에 체크아웃하고 에디터 모듈과 Win64 Development 게임을 빌드한 뒤 한 번만 쿠킹·패키징합니다. 같은 패키지로 Steam 검증을 `-Repeat` 횟수만큼 순차 실행합니다. 기본값은 1회입니다.
 
 기본 출력은 Windows 빌드 경로 길이를 줄이기 위해 `Documents/RTPS-V/<run_id>/`에 저장합니다. 사용자 프로필 경로가 길면 `-OutputDirectory`로 더 짧은 경로를 지정할 수 있습니다. 최상위 `result.jsonl`에는 `attempt_finished`마다 회차 번호, `PASS` 또는 `FAIL`, 단계, 상세 JSONL 경로가 남습니다. 한 회차가 실패해도 남은 회차를 실행합니다. 마지막 `test_finished`는 전부 통과했을 때 `PASS`와 종료 코드 0을 반환합니다. 실패가 있으면 `FAIL`과 종료 코드 1을 반환하고 첫 실패 회차와 단계를 기록합니다.
 
-2026년 11월 28일, UE 5.8.4에서 `3cb9f9f`를 위 명령으로 검증했습니다. 별도 작업 트리에서 Win64 Development 패키지를 한 번 만들고, 같은 패키지로 호스트와 VirtualBox VM을 연결해 **3회 연속 `PASS`**를 기록했습니다. 화면 캡처 없이 매 회차 Steam 방 검색, `row_selected`, SteamSockets 참가, 첫 경기와 재경기의 양쪽 승패 및 로비 복귀를 확인했습니다. 통합 실행 종료 코드는 0이었습니다. [검증 커밋](https://github.com/buddas-bible/RTPS/commit/3cb9f9fec7fe3ac846640a3feaa92bebab0f8cd7)
+2026년 11월 28일, UE 5.8.4에서 `71b2425`를 위 명령으로 검증했습니다. 기본 경로에서 Win64 Development 패키지를 한 번 만들고, 같은 패키지로 호스트와 VirtualBox VM을 연결해 **3회 연속 `PASS`**를 기록했습니다. 화면 캡처 없이 방 검색·선택, SteamSockets 참가, 첫 경기와 재경기 후 양쪽 로비 복귀, 양쪽 Steam 세션 정상 종료를 확인했습니다. 검색 재시도는 0회였고 통합 실행 종료 코드는 0이었습니다. [검증 커밋](https://github.com/buddas-bible/RTPS/commit/71b242561071610c753ac37238f62c288e62c8bd)
+
+UE 5.8의 Steam 검색은 후보 로비 중 상세 정보가 하나라도 누락되면 약 15초 뒤 검색 전체를 실패 처리합니다. Steam 검색을 RTPS 방으로 제한하고, 자동 검증에서는 회차 ID로 현재 방만 조회합니다. 검색이 `success:false`를 반환하면 5초 간격으로 총 네 번까지 시도합니다. 회차를 마칠 때는 양쪽에서 Steam 세션 종료 성공을 확인합니다. [검색 타임아웃 기술 사례](TECHNICAL_CASE.md#steam-로비-검색-타임아웃-해결)
 
 이전에는 VM의 실시간 `events.jsonl`을 복사하는 동안 게임의 추가 기록이 Windows 파일 공유 충돌로 실패할 수 있었습니다. 게임은 읽기를 허용하면서 기록하고, 검증 스크립트는 읽기·쓰기 공유를 허용해 VM에서 스냅샷을 만든 뒤 그 사본을 가져오도록 수정했습니다. [기록 충돌 수정 커밋](https://github.com/buddas-bible/RTPS/commit/0e05f891cb5db7852d67978065e0cb460e71740c)
